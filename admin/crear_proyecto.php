@@ -155,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $proyectoId = $conn->insert_id;
 
             if ($pmUserId > 0) {
-                $stmtAsign = $conn->prepare("INSERT INTO proyectos_pm (user_id, proyecto_id, activo) VALUES (?, ?, 1) ON DUPLICATE KEY UPDATE activo = VALUES(activo)");
+                $stmtAsign = $conn->prepare("INSERT INTO proyectos_pm (user_id, proyecto_id, activo) VALUES (?, ?, 1) ON DUPLICATE KEY UPDATE proyecto_id = VALUES(proyecto_id), activo = VALUES(activo)");
                 if (!$stmtAsign) {
                     throw new RuntimeException('No se pudo asignar el Project Manager.');
                 }

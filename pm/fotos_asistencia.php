@@ -482,7 +482,7 @@ function loadEmployees(projectId) {
                 message.innerHTML = `
                     <i class="fas fa-user-slash"></i>
                     <h3>Sin colaboradores activos</h3>
-                    <p>No hay empleados activos asignados a este proyecto.</p>
+                    <p>No hay servicios especializados activos asignados a este proyecto.</p>
                 `;
                 container.appendChild(message);
             } else {

@@ -132,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('Selecciona un proyecto.');
                 }
                 $stmt = $conn->prepare('INSERT INTO proyectos_pm (user_id, proyecto_id, activo) VALUES (?, ?, 1)
-                    ON DUPLICATE KEY UPDATE activo = 1');
+                    ON DUPLICATE KEY UPDATE proyecto_id = VALUES(proyecto_id), activo = VALUES(activo)');
                 if (!$stmt || !$stmt->bind_param('ii', $userId, $proyectoId) || !$stmt->execute()) {
                     throw new RuntimeException('No se pudo asignar el proyecto.');
                 }
@@ -342,7 +342,7 @@ if ($busqueda !== '') {
     $activeFilters[] = 'Búsqueda: "' . htmlspecialchars($busqueda) . '"';
 }
 
-$pageTitle = 'Project Managers - SistemaGP';
+$pageTitle = 'Project Managers - Ergo PMS';
 $activePage = 'pm';
 $pageHeading = 'Project Managers';
 $pageDescription = 'Administra credenciales, asignaciones y disponibilidad del equipo coordinador.';

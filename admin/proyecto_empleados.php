@@ -283,6 +283,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     proyecto_servicios_especializados_redirect($proyectoId);
     }
 
+    if ($accion === 'asignar') {
+        $inicioSemanaActual = obtenerInicioSemanaActual();
+        $agendaActual = null;
+        if ($stmtAgenda = $conn->prepare('SELECT ep.proyecto_id, g.nombre AS proyecto_nombre
+                                             FROM empleado_programacion ep
+                                             JOIN grupos g ON g.id = ep.proyecto_id
+                                            WHERE ep.empleado_id = ? AND ep.semana_inicio = ?
+                                            LIMIT 1')) {
+            $stmtAgenda->bind_param('is', $empleadoId, $inicioSemanaActual);
+            $stmtAgenda->execute();
+            $resultadoAgenda = $stmtAgenda->get_result();
+            if ($resultadoAgenda) {
+                $agendaActual = $resultadoAgenda->fetch_assoc();
+            }
+            $stmtAgenda->close();
+        }
+
+        if ($agendaActual && (int)($agendaActual['proyecto_id'] ?? 0) !== $proyectoId) {
+            $nombreDestino = trim((string)($agendaActual['proyecto_nombre'] ?? 'otro proyecto'));
+            $_SESSION['flash_error'] = 'El colaborador está programado esta semana para ' . ($nombreDestino !== '' ? $nombreDestino : 'otro proyecto') . '. Espera a que cambie la semana para reasignarlo.';
+            proyecto_servicios_especializados_redirect($proyectoId);
+        }
+    }
+
     $transactionStarted = false;
 
     try {

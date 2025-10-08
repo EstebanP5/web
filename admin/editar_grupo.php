@@ -37,6 +37,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $lat = isset($_POST['lat']) && $_POST['lat'] !== '' ? (float)$_POST['lat'] : 0.0;
   $lng = isset($_POST['lng']) && $_POST['lng'] !== '' ? (float)$_POST['lng'] : 0.0;
 
+  // Fechas del proyecto (permitir actualizar)
+  $fecha_inicio_raw = isset($_POST['fecha_inicio']) ? trim((string)$_POST['fecha_inicio']) : '';
+  $fecha_fin_raw = isset($_POST['fecha_fin']) ? trim((string)$_POST['fecha_fin']) : '';
+
+  $fecha_inicio_sql = null;
+  $fecha_fin_sql = null;
+
+  if ($fecha_inicio_raw !== '') {
+    try {
+      $fecha_inicio_sql = (new DateTimeImmutable($fecha_inicio_raw))->format('Y-m-d');
+    } catch (Throwable $e) {
+      $fecha_inicio_sql = null;
+    }
+  }
+
+  if ($fecha_fin_raw !== '') {
+    try {
+      $fecha_fin_sql = (new DateTimeImmutable($fecha_fin_raw))->format('Y-m-d');
+    } catch (Throwable $e) {
+      $fecha_fin_sql = null;
+    }
+  }
+
   // Actualizar tabla grupos (nota: no existe columna pm_id en grupos)
   $nombre = isset($_POST['nombre']) ? (string)$_POST['nombre'] : '';
   $localidad = isset($_POST['localidad']) ? (string)$_POST['localidad'] : '';
@@ -44,8 +67,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $pm_nombre = $pm && isset($pm['nombre']) ? (string)$pm['nombre'] : '';
   $pm_telefono = $pm && isset($pm['telefono']) ? (string)$pm['telefono'] : '';
 
-  $stmt = $conn->prepare("UPDATE grupos SET nombre=?, localidad=?, lat=?, lng=?, pm_nombre=?, pm_telefono=?, empresa=? WHERE id=?");
-  $stmt->bind_param('ssddsssi', $nombre, $localidad, $lat, $lng, $pm_nombre, $pm_telefono, $empresa, $grupo_id);
+  $stmt = $conn->prepare("UPDATE grupos SET nombre=?, localidad=?, fecha_inicio=?, fecha_fin=?, lat=?, lng=?, pm_nombre=?, pm_telefono=?, empresa=? WHERE id=?");
+  $stmt->bind_param('ssssddsssi', $nombre, $localidad, $fecha_inicio_sql, $fecha_fin_sql, $lat, $lng, $pm_nombre, $pm_telefono, $empresa, $grupo_id);
   $stmt->execute();
 
   // Actualizar asignación del PM (limpiar y reinsertar)
@@ -346,6 +369,31 @@ if ($stmtCurrentPm = $conn->prepare("SELECT pm.id, pm.nombre, pm.telefono, u.ema
     .btn-sm { padding: 8px 14px; font-size: 13px; }
     .loading { display:none; color: var(--primary); font-style: italic; }
     .helper-text { font-size: 13px; color: var(--muted); }
+  .small-warning { font-size: 12px; color: #b91c1c; margin-top: 6px; }
+    .assignments-callout {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 18px 20px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(14, 116, 144, 0.1));
+      border: 1.5px solid rgba(37, 99, 235, 0.25);
+      margin-bottom: 18px;
+    }
+    .assignments-callout i {
+      font-size: 26px;
+      color: #1d4ed8;
+    }
+    .assignments-callout strong {
+      font-size: 15px;
+      color: #0f172a;
+      display: block;
+    }
+    .assignments-callout p {
+      margin: 4px 0 0;
+      font-size: 13px;
+      color: #1f2937;
+    }
     .empleados-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -517,6 +565,15 @@ if ($stmtCurrentPm = $conn->prepare("SELECT pm.id, pm.nombre, pm.telefono, u.ema
             <label>Empresa *</label>
             <input type="text" name="empresa" value="<?=htmlspecialchars($grupo['empresa'])?>" required>
           </div>
+          <div>
+            <label>Fecha de inicio</label>
+            <input type="date" name="fecha_inicio" value="<?=htmlspecialchars($grupo['fecha_inicio'] ?? '')?>">
+          </div>
+          <div>
+            <label>Fecha de fin</label>
+            <input type="date" name="fecha_fin" value="<?=htmlspecialchars($grupo['fecha_fin'] ?? '')?>">
+            <p class="small-warning">Cuando la fecha de fin es anterior a hoy el proyecto se cerrará automáticamente.</p>
+          </div>
         </div>
         <p class="helper-text">Este nombre se usa en reportes, vistas públicas y dashboards del personal.</p>
       </fieldset>
@@ -591,9 +648,13 @@ if ($stmtCurrentPm = $conn->prepare("SELECT pm.id, pm.nombre, pm.telefono, u.ema
 
       <fieldset class="form-section">
         <legend>👥 Equipo asignado</legend>
-        <div style="display:flex;flex-direction:column;gap:12px;">
-          <input type="text" id="buscaEmpleado" class="buscador" placeholder="🔍 Buscar por nombre, puesto, NSS, CURP..." oninput="filtrarEmpleados()">
-          <p class="helper-text">Coincidencias instantáneas sobre <?=$empleadoTotal?> registro(s). Mantén actualizados teléfono, NSS y CURP para agilizar trámites.</p>
+        <div class="assignments-callout">
+          <i class="fa-solid fa-people-arrows"></i>
+          <div>
+            <strong>Gestiona cambios desde la vista dedicada</strong>
+            <p>Para agregar o quitar Servicios Especializados utiliza la sección <em>“Gestionar asignaciones”</em>. Aquí solo se muestra el personal actualmente activo en el proyecto.</p>
+          </div>
+          <a class="btn btn-primary btn-sm" href="proyecto_empleados.php?id=<?=$grupo_id?>">Gestionar asignaciones</a>
         </div>
         <div id="empleados-container" class="empleados-grid">
           <?php foreach($empleados as $i=>$e): ?>
@@ -632,11 +693,6 @@ if ($stmtCurrentPm = $conn->prepare("SELECT pm.id, pm.nombre, pm.telefono, u.ema
           </div>
           <?php endforeach; ?>
         </div>
-        <div class="divider"></div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between;">
-          <span class="helper-text">¿Necesitas mover personal? Gestiona altas y bajas desde la vista dedicada.</span>
-          <a class="btn btn-secondary btn-sm" href="proyecto_empleados.php?id=<?=$grupo_id?>">🔁 Gestionar asignaciones</a>
-        </div>
       </fieldset>
 
       <div class="actions-bar">
@@ -671,10 +727,7 @@ if ($stmtCurrentPm = $conn->prepare("SELECT pm.id, pm.nombre, pm.telefono, u.ema
     }
 
     function filtrarEmpleados() {
-      const q = document.getElementById('buscaEmpleado').value.toLowerCase();
-      document.querySelectorAll('.empleado-card').forEach(card => {
-        card.style.display = card.dataset.nombre.includes(q) ? '' : 'none';
-      });
+      // Buscador removido por UX: se mantiene la función por compatibilidad en caso de llamadas legacy.
     }
 
     function renderMap(lat, lng) {
