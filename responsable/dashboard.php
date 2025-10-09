@@ -31,30 +31,79 @@ if (!function_exists('responsable_parse_datetime')) {
         if (empty($hora)) {
             return null;
         }
-        $valor = $hora;
-        if (preg_match('/^\d{2}:\d{2}:\d{2}$/', $hora)) {
-            $valor = trim(($fecha ?: date('Y-m-d')) . ' ' . $hora);
+
+        $hora = trim($hora);
+        $fecha = $fecha ? trim($fecha) : null;
+
+        // Normalizar fracciones de segundo conservando solo HH:MM:SS
+        if (preg_match('/^\d{2}:\d{2}:\d{2}(\.\d+)?$/', $hora)) {
+            $hora = substr($hora, 0, 8);
+            $valor = ($fecha ?: date('Y-m-d')) . ' ' . $hora;
+        } elseif (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d+)?$/', $hora)) {
+            // Hora ya viene como timestamp completo
+            $valor = substr($hora, 0, 19);
+        } else {
+            // Cadenas ISO u otros formatos (ej. 2024-01-01T08:00:00.000Z)
+            $valor = $hora;
+            if ($fecha && strpos($hora, 'T') === false) {
+                $valor = $fecha . ' ' . $hora;
+            }
         }
-        $timestamp = strtotime($valor);
-        return $timestamp !== false ? $timestamp : null;
+
+        try {
+            $dt = new DateTimeImmutable($valor);
+            return $dt->getTimestamp();
+        } catch (Exception $e) {
+            $timestamp = strtotime($valor);
+            return $timestamp !== false ? $timestamp : null;
+        }
     }
 }
 
-if (!function_exists('responsable_puede_reabrir')) {
-    function responsable_puede_reabrir(?string $fecha, ?string $hora): bool {
-        return responsable_parse_datetime($fecha, $hora) !== null;
+if (!function_exists('responsable_calcular_trabajado')) {
+    function responsable_calcular_trabajado(?array $asistencia, array $descansos, string $diaOperativo): int {
+        if (!$asistencia || empty($asistencia['hora_entrada'])) {
+            return 0;
+        }
+
+        $entrada = responsable_parse_datetime($asistencia['fecha'] ?? $diaOperativo, $asistencia['hora_entrada']);
+        if (!$entrada) {
+            return 0;
+        }
+
+        $salida = !empty($asistencia['hora_salida'])
+            ? responsable_parse_datetime($asistencia['fecha'] ?? $diaOperativo, $asistencia['hora_salida'])
+            : time();
+
+        if (!$salida || $salida < $entrada) {
+            $salida = time();
+        }
+
+        $trabajado = max(0, $salida - $entrada);
+
+        foreach ($descansos as $descanso) {
+            if (empty($descanso['inicio'])) {
+                continue;
+            }
+
+            $inicioDescanso = responsable_parse_datetime($diaOperativo, $descanso['inicio']);
+            if (!$inicioDescanso) {
+                continue;
+            }
+
+            $finDescanso = !empty($descanso['fin'])
+                ? responsable_parse_datetime($diaOperativo, $descanso['fin'])
+                : time();
+
+            if ($finDescanso && $finDescanso > $inicioDescanso) {
+                $trabajado -= ($finDescanso - $inicioDescanso);
+            }
+        }
+
+        return (int) max(0, $trabajado);
     }
 }
 
-if (!function_exists('responsable_estado_reapertura')) {
-    function responsable_estado_reapertura(?array $asistencia, string $diaOperativo): bool {
-        if ($asistencia && !empty($asistencia['hora_salida'])) {
-            return responsable_parse_datetime($asistencia['fecha'] ?? $diaOperativo, $asistencia['hora_salida']) !== null;
-        }
-        return false;
-    }
-}
-$reapertura_disponible = false;
 
 // Obtener información del Servicio Especializado y sus proyectos
 $empleado_query = "SELECT * FROM empleados WHERE id = ? AND activo = 1";
@@ -93,7 +142,7 @@ $proyectos = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 // Obtener asistencia de hoy
 // Definir fecha operativa (12 horas tras cierre)
 $dia_operativo = date('Y-m-d');
-$asistencia_hoy = null; $ultimo_registro = null; $turno_cerrado_reciente = false;
+$asistencia_hoy = null; $ultimo_registro = null; $turno_cerrado_reciente = false; $siguiente_inicio_permitido_ts = null; $bloqueo_nuevo_turno_msg = '';
 if (!empty($proyectos)) {
     $proyecto_ids = array_column($proyectos, 'id');
     $ph = str_repeat('?,', count($proyecto_ids) - 1) . '?';
@@ -113,6 +162,10 @@ if (!empty($proyectos)) {
                 $dia_operativo = $ultimo_registro['fecha'] ?? $dia_operativo;
                 $turno_cerrado_reciente = true;
             }
+            $siguiente_inicio_permitido_ts = strtotime('tomorrow', $ultima_salida_ts);
+            if ($siguiente_inicio_permitido_ts && time() < $siguiente_inicio_permitido_ts) {
+                $bloqueo_nuevo_turno_msg = 'No podrás abrir un nuevo turno hasta las ' . date('d/m/Y H:i', $siguiente_inicio_permitido_ts) . '.';
+            }
         }
     }
     // Cargar asistencia del día operativo
@@ -124,8 +177,6 @@ if (!empty($proyectos)) {
     $stmt->execute();
     $asistencia_hoy = $stmt->get_result()->fetch_assoc();
 }
-
-$reapertura_disponible = responsable_estado_reapertura($asistencia_hoy, $dia_operativo);
 
 // Procesar registro de asistencia y descansos
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_asistencia'])) {
@@ -139,7 +190,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_asistencia']))
         if ($tipo === 'entrada') {
             // Si el último turno se cerró hace <12h y pertenece a ese día, no permitir nueva entrada
             if ($turno_cerrado_reciente) {
-                $mensaje_error = '❌ Tu último turno se cerró hace menos de 12 horas. Reabre el turno para continuar.';
+                $mensaje_error = '❌ Ya registraste tu salida hoy. Podrás iniciar un nuevo turno a partir de las ' . ($siguiente_inicio_permitido_ts ? date('d/m/Y H:i', $siguiente_inicio_permitido_ts) : '00:00 del siguiente día') . '.';
+            } elseif ($siguiente_inicio_permitido_ts && time() < $siguiente_inicio_permitido_ts) {
+                $mensaje_error = '⏳ No puedes abrir un nuevo turno hasta las ' . date('d/m/Y H:i', $siguiente_inicio_permitido_ts) . '.';
             } else {
             // Registrar entrada (si ya existe, actualizar la hora)
                 $stmt = $conn->prepare("INSERT INTO asistencia (empleado_id, proyecto_id, fecha, hora_entrada, lat_entrada, lon_entrada)
@@ -172,55 +225,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_asistencia']))
             $stmt = $conn->prepare("UPDATE descansos SET fin = NOW() WHERE empleado_id = ? AND proyecto_id = ? AND fecha = ? AND fin IS NULL ORDER BY inicio DESC LIMIT 1");
             $stmt->bind_param('iis', $user_id, $proyecto_id, $dia_operativo);
             if ($stmt->execute() && $stmt->affected_rows > 0) { $mensaje_exito = '▶️ Trabajo reanudado'; } else { $mensaje_error = '❌ No hay descanso activo'; }
-        } elseif ($tipo === 'reabrir') {
-            // Reabrir turno: cubrir la pausa entre salida previa y ahora con un descanso, luego limpiar hora_salida
-            $stmt = $conn->prepare("SELECT fecha, hora_salida FROM asistencia WHERE empleado_id = ? AND proyecto_id = ? AND fecha = ? AND hora_salida IS NOT NULL ORDER BY hora_salida DESC LIMIT 1");
-            $stmt->bind_param('iis', $user_id, $proyecto_id, $dia_operativo);
-            $stmt->execute();
-            $res = $stmt->get_result();
-            $row = $res ? $res->fetch_assoc() : null;
-            if ($row && !empty($row['hora_salida'])) {
-                if (!responsable_puede_reabrir($row['fecha'] ?? $dia_operativo, $row['hora_salida'])) {
-                    $mensaje_error = '❌ No se pudo reabrir el turno. Falta información de la salida.';
-                } else {
-                $hora_salida_prev = $row['hora_salida'];
-                $fecha_registro = $row['fecha'] ?? $dia_operativo;
-                $inicio_descanso = $hora_salida_prev;
-                // Si hora_salida es solo tiempo, completar con la fecha
-                if (preg_match('/^\d{2}:\d{2}:\d{2}$/', $hora_salida_prev)) {
-                    $inicio_descanso = $fecha_registro . ' ' . $hora_salida_prev;
-                }
-                $inicio_timestamp = strtotime($inicio_descanso);
-                if ($inicio_timestamp === false) {
-                    $inicio_descanso = $fecha_registro . ' ' . date('H:i:s');
-                    $inicio_timestamp = strtotime($inicio_descanso);
-                }
-                $inicio_descanso = date('Y-m-d H:i:s', $inicio_timestamp);
-
-                // Evitar duplicar descansos por reapertura seguidos
-                $motivo_gap = 'Reapertura de turno';
-                $stmtCheck = $conn->prepare("SELECT id FROM descansos WHERE empleado_id = ? AND proyecto_id = ? AND fecha = ? AND motivo = ? ORDER BY inicio DESC LIMIT 1");
-                $stmtCheck->bind_param('iiss', $user_id, $proyecto_id, $dia_operativo, $motivo_gap);
-                $stmtCheck->execute();
-                $existing = $stmtCheck->get_result()->fetch_assoc();
-
-                if ($existing) {
-                    $stmtUpdateBreak = $conn->prepare("UPDATE descansos SET inicio = ?, fin = NOW() WHERE id = ?");
-                    $stmtUpdateBreak->bind_param('si', $inicio_descanso, $existing['id']);
-                    $stmtUpdateBreak->execute();
-                } else {
-                    $stmtD = $conn->prepare("INSERT INTO descansos (empleado_id, proyecto_id, fecha, inicio, fin, motivo) VALUES (?, ?, ?, ?, NOW(), ?)");
-                    $stmtD->bind_param('iisss', $user_id, $proyecto_id, $dia_operativo, $inicio_descanso, $motivo_gap);
-                    $stmtD->execute();
-                }
-
-                $stmtU = $conn->prepare("UPDATE asistencia SET hora_salida = NULL, lat_salida = NULL, lon_salida = NULL WHERE empleado_id = ? AND proyecto_id = ? AND fecha = ?");
-                $stmtU->bind_param('iis', $user_id, $proyecto_id, $dia_operativo);
-                if ($stmtU->execute()) { $mensaje_exito = '🔓 Turno reabierto. Puedes continuar con tu jornada.'; } else { $mensaje_error = '❌ No se pudo reabrir el turno.'; }
-                }
-            } else {
-                $mensaje_error = '❌ No hay turno cerrado para reabrir.';
-            }
         }
 
     // Refrescar estado del día operativo (antes usaba $hoy que no existe -> no actualizaba la entrada)
@@ -229,7 +233,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_asistencia']))
     $stmt->execute();
     $asistencia_hoy = $stmt->get_result()->fetch_assoc();
 
-    $reapertura_disponible = responsable_estado_reapertura($asistencia_hoy, $dia_operativo);
     $turno_cerrado_reciente = ($asistencia_hoy && !empty($asistencia_hoy['hora_salida']));
     }
 }
@@ -237,6 +240,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_asistencia']))
 // Estado de descanso actual y sumatoria de descansos de hoy
 $descanso_activo = null;
 $descansos_hoy = [];
+$tiempo_trabajado_inicial = 0;
 if (!empty($proyectos)) {
     $pid = $asistencia_hoy && isset($asistencia_hoy['proyecto_id']) ? (int)$asistencia_hoy['proyecto_id'] : (int)$proyectos[0]['id'];
     $rs = $conn->prepare("SELECT * FROM descansos WHERE empleado_id = ? AND proyecto_id = ? AND fecha = ? ORDER BY inicio ASC");
@@ -244,6 +248,8 @@ if (!empty($proyectos)) {
     $rs->execute();
     $descansos_hoy = $rs->get_result()->fetch_all(MYSQLI_ASSOC);
     foreach ($descansos_hoy as $d) { if ($d['fin'] === null) { $descanso_activo = $d; } }
+
+    $tiempo_trabajado_inicial = responsable_calcular_trabajado($asistencia_hoy, $descansos_hoy, $dia_operativo);
 }
 
 // Historial reciente (últimos 10 registros del usuario en proyectos activos)
@@ -452,27 +458,6 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
             flex-wrap: wrap;
         }
 
-        .reopen-info {
-            margin-top: 16px;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            background: rgba(255, 255, 255, 0.18);
-            padding: 8px 12px;
-            border-radius: 999px;
-        }
-
-        .reopen-info.locked {
-            background: rgba(239, 68, 68, 0.18);
-            color: #fee2e2;
-        }
-
-        .reopen-countdown {
-            font-weight: 600;
-        }
-        
         .btn {
             padding: 12px 24px;
             border: none;
@@ -781,7 +766,7 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
                     <div class="attendance-card">
                         <div class="attendance-status" id="estadoJornada">
                             <?php if ($asistencia_hoy && $asistencia_hoy['hora_salida']): ?>
-                                ⏳ Turno cerrado — puedes reabrir cuando lo necesites
+                                ⏳ Turno cerrado — próximo turno disponible a partir de <?= $siguiente_inicio_permitido_ts ? date('d/m/Y H:i', $siguiente_inicio_permitido_ts) : 'las 00:00 del siguiente día'; ?>
                             <?php elseif ($descanso_activo): ?>⏸️ En descanso
                             <?php elseif ($asistencia_hoy && $asistencia_hoy['hora_entrada']): ?>🟡 En el Trabajo
                             <?php else: ?>Sin Registro Hoy
@@ -799,7 +784,14 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
 
                         <div class="attendance-buttons" id="acciones">
                             <?php if (!$asistencia_hoy || !$asistencia_hoy['hora_entrada']): ?>
-                                <button class="btn btn-entrada" onclick="accionConFoto('entrada')"><i class="fas fa-sign-in-alt"></i> Registrar Entrada</button>
+                                <?php if ($bloqueo_nuevo_turno_msg): ?>
+                                    <div class="alert alert-info" style="margin-bottom:8px; font-size:14px;">
+                                        <i class="fas fa-clock"></i> <?= htmlspecialchars($bloqueo_nuevo_turno_msg); ?>
+                                    </div>
+                                    <button class="btn btn-entrada" type="button" disabled style="opacity:.6; cursor:not-allowed;"><i class="fas fa-sign-in-alt"></i> Registrar Entrada</button>
+                                <?php else: ?>
+                                    <button class="btn btn-entrada" onclick="accionConFoto('entrada')"><i class="fas fa-sign-in-alt"></i> Registrar Entrada</button>
+                                <?php endif; ?>
                             <?php elseif ($asistencia_hoy && !$asistencia_hoy['hora_salida']): ?>
                                 <?php if ($descanso_activo): ?>
                                     <button class="btn btn-entrada" onclick="accionConFoto('reanudar')"><i class="fas fa-play"></i> Reanudar</button>
@@ -808,16 +800,11 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
                                 <?php endif; ?>
                                 <button class="btn btn-salida" onclick="accionConFoto('salida')"><i class="fas fa-sign-out-alt"></i> Registrar Salida</button>
                             <?php else: ?>
-                                        <button class="btn btn-secondary" onclick="accionConFoto('reabrir')"><i class="fas fa-unlock"></i> Reabrir turno</button>
+                                <div class="alert alert-info" style="margin: 0; font-size:14px;">
+                                    <i class="fas fa-moon"></i> Turno finalizado. El siguiente podrá iniciar a partir de <?= $siguiente_inicio_permitido_ts ? date('d/m/Y H:i', $siguiente_inicio_permitido_ts) : 'las 00:00 del siguiente día'; ?>.
+                                </div>
                             <?php endif; ?>
                         </div>
-
-                        <?php if ($asistencia_hoy && $asistencia_hoy['hora_salida']): ?>
-                            <div class="reopen-info">
-                                <i class="fas fa-clock"></i>
-                                Puedes reabrir tu turno en cualquier momento si lo cerraste por error.
-                            </div>
-                        <?php endif; ?>
 
                         <div class="motivo-box" id="motivoBox">
                             <input type="text" id="motivoDescanso" placeholder="Motivo del descanso">
@@ -944,7 +931,7 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
     let accionEnCurso=false, enviandoFoto=false;
         const userId = <?= (int)$user_id ?>;
     let turnoCerradoReciente = <?= $turno_cerrado_reciente ? 'true' : 'false' ?>;
-    let reaperturaDisponibleJs = <?= $reapertura_disponible ? 'true' : 'false' ?>;
+    const bloqueoNuevoTurnoMsg = <?= json_encode($bloqueo_nuevo_turno_msg); ?>;
 
         function mostrarMotivo(){ document.getElementById('motivoBox').style.display='block'; }
         function ocultarMotivo(){ document.getElementById('motivoBox').style.display='none'; document.getElementById('motivoDescanso').value=''; }
@@ -959,12 +946,7 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
                     accionEnCurso = true;
                     accionActual = tipo;
                     if(tipo==='entrada' && turnoCerradoReciente){
-                        alert('Tu último turno se cerró. Reabre el turno para continuar.');
-                        accionEnCurso = false;
-                        return;
-                    }
-                    if(tipo==='reabrir' && !reaperturaDisponibleJs){
-                        alert('No hay un turno cerrado disponible para reabrir.');
+                        alert(bloqueoNuevoTurnoMsg || 'Tu turno ya fue cerrado hoy. Podrás iniciar un nuevo turno a partir de las 00:00 del siguiente día.');
                         accionEnCurso = false;
                         return;
                     }
@@ -1043,10 +1025,8 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
           fd.append('grupo_id', proyectoId);
           fd.append('lat', lat); fd.append('lng', lng); fd.append('direccion', direccion);
           // Normalizar tipos para almacenamiento de fotos:
-          // reabrir -> Entrada (se considera nueva entrada visual)
           // reanudar -> Reanudar (se mantiene) pero podría mapearse a Descanso fin si luego se desea
           let tipoFoto = accionActual.toLowerCase();
-          if(tipoFoto==='reabrir') tipoFoto='entrada';
           // Capitalizar primera letra
           tipoFoto = tipoFoto.charAt(0).toUpperCase()+tipoFoto.slice(1);
           fd.append('tipo_asistencia', tipoFoto);
@@ -1065,17 +1045,18 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
           document.getElementById('formAccion').submit();
         }
 
-            // Reabrir ahora usa la misma captura con foto mediante accionConFoto('reabrir')
-
         // Timer de tiempo trabajado (robusto)
         (function initTimer(){
             let entradaMs = <?= $asistencia_hoy && $asistencia_hoy['hora_entrada'] ? (responsable_parse_datetime($asistencia_hoy['fecha'] ?? $dia_operativo, $asistencia_hoy['hora_entrada']) * 1000) : 'null' ?>;
             let salidaMs = <?= $asistencia_hoy && $asistencia_hoy['hora_salida'] ? (responsable_parse_datetime($asistencia_hoy['fecha'] ?? $dia_operativo, $asistencia_hoy['hora_salida']) * 1000) : 'null' ?>;
             const descansos = <?= json_encode(array_map(function($d){ return [ 'inicio_ms'=> $d['inicio']? (strtotime($d['inicio'])*1000) : null, 'fin_ms'=> $d['fin']? (strtotime($d['fin'])*1000) : null ]; }, $descansos_hoy)); ?>;
             const target = document.getElementById('tiempoTrabajado');
+            const workedBootstrap = <?= (int)$tiempo_trabajado_inicial ?>;
+            const pageLoadMs = Date.now();
             function fmt(s){ if(!isFinite(s)||s<0) s=0; const h=String(Math.floor(s/3600)).padStart(2,'0');const m=String(Math.floor((s%3600)/60)).padStart(2,'0');const sec=String(s%60).padStart(2,'0');return `${h}:${m}:${sec}` }
             if(!target) return;
-            if(!entradaMs){ target.textContent='00:00:00'; return; }
+            if(workedBootstrap>0){ target.textContent = fmt(workedBootstrap); }
+            if(!entradaMs){ target.textContent = fmt(workedBootstrap); return; }
             function calc(){
                 try {
                     const nowMs = Date.now();
@@ -1101,6 +1082,11 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
                         });
                     }
                     let worked = total - resta; if(!isFinite(worked)||worked<0) worked=0;
+                    if(!salidaMs && worked < workedBootstrap){
+                        // Evita retrocesos por desfases de servidor; añadimos progreso desde la carga
+                        const delta = Math.max(0, Math.floor((nowMs - pageLoadMs)/1000));
+                        worked = workedBootstrap + delta;
+                    }
                     target.textContent = fmt(worked);
                 } catch(err){ target.textContent='00:00:00'; }
             }
