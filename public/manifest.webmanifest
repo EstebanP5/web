@@ -1,0 +1,23 @@
+{
+  "name": "Ergo PMS Asistencia",
+  "short_name": "Asistencia",
+  "description": "Registro de asistencia para servicios especializados con soporte offline.",
+  "start_url": "./asistencia.php",
+  "scope": "/public/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#667eea",
+  "theme_color": "#667eea",
+  "icons": [
+    {
+      "src": "/recursos/logo.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/recursos/icon_caida.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}

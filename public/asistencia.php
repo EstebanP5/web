@@ -86,6 +86,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['foto'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#667eea">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="../recursos/logo.png">
     <title>📸 Asistencia - <?= htmlspecialchars($grupo['nombre']) ?></title>
     <style>
         * {
@@ -108,6 +112,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['foto'])) {
             border-radius: 20px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.2);
             overflow: hidden;
+        }
+
+        .offline-banner {
+            display: none;
+            gap: 12px;
+            align-items: center;
+            padding: 0.9rem 1rem;
+            margin-bottom: 1rem;
+            border-radius: 14px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            background: rgba(255, 193, 7, 0.18);
+            color: #8a6d00;
+        }
+
+        .offline-banner.online {
+            background: rgba(40, 167, 69, 0.12);
+            color: #1c7430;
+        }
+
+        .offline-banner .queue-count {
+            margin-left: auto;
+            font-size: 0.8rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 999px;
+            background: rgba(0,0,0,0.08);
+            font-weight: 700;
         }
         
         .header {
@@ -350,6 +381,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['foto'])) {
             <?php if ($mensaje): ?>
                 <div class="mensaje <?= $tipo_mensaje ?>"><?= $mensaje ?></div>
             <?php endif; ?>
+
+            <div id="offlineBanner" class="offline-banner">
+                <span id="offlineStatusText">📡 Verificando conexión…</span>
+                <span id="offlineQueueText" class="queue-count" style="display:none;">0</span>
+            </div>
             
             <!-- FORMULARIO HTML -->
             <form method="POST" enctype="multipart/form-data" id="asistenciaForm">
@@ -415,14 +451,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['foto'])) {
         </div>
     </div>
 
+    <script src="js/pwa.js"></script>
     <script>
         let ubicacionObtenida = false;
         let fotoSeleccionada = false;
-        
-        // Obtener ubicación al cargar la página
+        let pendientesGuardados = 0;
+        let offlineBanner, offlineStatusText, offlineQueueText;
+
+        // Obtener ubicación al cargar la página y preparar PWA
         document.addEventListener('DOMContentLoaded', function() {
+            offlineBanner = document.getElementById('offlineBanner');
+            offlineStatusText = document.getElementById('offlineStatusText');
+            offlineQueueText = document.getElementById('offlineQueueText');
+
+            if (window.asistenciaPWA) {
+                asistenciaPWA.init({
+                    onPendingChange: actualizarPendientes
+                });
+            }
+
+            actualizarEstadoConexion();
             obtenerUbicacion();
         });
+
+        window.addEventListener('online', actualizarEstadoConexion);
+        window.addEventListener('offline', actualizarEstadoConexion);
+
+        function actualizarPendientes(count) {
+            pendientesGuardados = count;
+            if (!offlineBanner || !offlineQueueText) return;
+            if (count > 0) {
+                offlineQueueText.style.display = 'inline-flex';
+                offlineQueueText.textContent = `${count} pendiente${count !== 1 ? 's' : ''}`;
+            } else {
+                offlineQueueText.style.display = 'none';
+            }
+            actualizarEstadoConexion();
+        }
+
+        function actualizarEstadoConexion() {
+            if (!offlineBanner || !offlineStatusText) return;
+            const online = navigator.onLine;
+            const mostrar = !online || pendientesGuardados > 0;
+            offlineBanner.style.display = mostrar ? 'flex' : 'none';
+            offlineBanner.classList.toggle('online', online);
+            if (!online) {
+                offlineStatusText.textContent = '📡 Sin conexión. Guardaremos tus registros y los enviaremos automáticamente al volver la red.';
+            } else if (pendientesGuardados > 0) {
+                offlineStatusText.textContent = '🟢 Conexión restaurada. Sincronizando registros pendientes…';
+            } else {
+                offlineStatusText.textContent = '🟢 Conexión disponible.';
+            }
+        }
+
+        function mostrarAvisoOffline(mensaje) {
+            if (!offlineBanner || !offlineStatusText) return;
+            offlineBanner.style.display = 'flex';
+            offlineBanner.classList.remove('online');
+            offlineStatusText.textContent = mensaje;
+        }
         
         // Manejar selección de empleado
         document.getElementById('empleado_nombre').addEventListener('change', function() {
@@ -592,9 +679,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['foto'])) {
                 }
             }
         }
+
+        function limpiarFormularioOffline() {
+            const empleadoSelect = document.getElementById('empleado_nombre');
+            if (empleadoSelect) {
+                empleadoSelect.value = '';
+            }
+
+            const tipoSelect = document.getElementById('tipo_asistencia');
+            if (tipoSelect) {
+                tipoSelect.value = '';
+            }
+
+            const motivoInput = document.getElementById('motivo');
+            if (motivoInput) {
+                motivoInput.value = '';
+            }
+
+            const motivoGroup = document.getElementById('motivoGroup');
+            if (motivoGroup) {
+                motivoGroup.style.display = 'none';
+            }
+
+            const fotoInput = document.getElementById('foto');
+            if (fotoInput) {
+                fotoInput.value = '';
+            }
+
+            const telefonoInput = document.getElementById('empleado_telefono');
+            if (telefonoInput) {
+                telefonoInput.value = '';
+            }
+
+            const preview = document.getElementById('previewContainer');
+            if (preview) {
+                preview.style.display = 'none';
+            }
+            const previewImage = document.getElementById('previewImage');
+            if (previewImage) {
+                previewImage.src = '';
+            }
+
+            fotoSeleccionada = false;
+        }
         
-        // Prevenir envío si faltan datos
-        document.getElementById('asistenciaForm').addEventListener('submit', function(e) {
+        // Prevenir envío si faltan datos y manejar modo offline
+        document.getElementById('asistenciaForm').addEventListener('submit', async function(e) {
             if (!ubicacionObtenida || !fotoSeleccionada) {
                 e.preventDefault();
                 alert('❌ Faltan datos:\n' + 
@@ -602,9 +732,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['foto'])) {
                       (!ubicacionObtenida ? '• Ubicación requerida' : ''));
                 return false;
             }
-            
-            // Mostrar loading
+
             const submitBtn = document.getElementById('submitBtn');
+
+            if (!navigator.onLine && window.asistenciaPWA) {
+                e.preventDefault();
+                submitBtn.disabled = true;
+                submitBtn.textContent = '📦 Guardando registro offline…';
+                try {
+                    await asistenciaPWA.queueSubmission(e.target);
+                    mostrarAvisoOffline('📦 Registro guardado sin conexión. Lo enviaremos automáticamente cuando vuelva la red.');
+                    limpiarFormularioOffline();
+                } catch (error) {
+                    console.error('Error guardando offline', error);
+                    alert('❌ No se pudo guardar el registro en modo offline. Intenta nuevamente.');
+                } finally {
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = '✅ Registrar Asistencia';
+                    verificarFormulario();
+                }
+                return false;
+            }
+            
+            // Mostrar loading en envío en línea (dejar que el formulario continúe)
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<span class="spinner"></span> Procesando foto...';
         });

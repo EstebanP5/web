@@ -2,24 +2,31 @@
 session_start();
 require_once 'includes/db.php';
 
+$error = $error ?? null;
+$isAjax = ($_SERVER['REQUEST_METHOD'] === 'POST') && (
+    (isset($_POST['ajax']) && $_POST['ajax'] === '1') ||
+    (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')
+);
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $usuario = trim($_POST['usuario']);
-    $password = trim($_POST['password']);
+    $usuario = trim($_POST['usuario'] ?? '');
+    $password = trim($_POST['password'] ?? '');
 
     if (empty($usuario) || empty($password)) {
         $error = "Por favor, ingrese usuario y contraseña.";
     } else {
-        // Buscar en la nueva tabla users
-    $stmt = $conn->prepare("SELECT id, name, password, rol FROM users WHERE email = ? AND activo = 1 ORDER BY updated_at DESC, id ASC LIMIT 1");
+        $stmt = $conn->prepare("SELECT id, name, password, rol FROM users WHERE email = ? AND activo = 1 ORDER BY updated_at DESC, id ASC LIMIT 1");
         $stmt->bind_param("s", $usuario);
         $stmt->execute();
         $result = $stmt->get_result();
 
-        if ($result->num_rows >= 1) {
+        if ($result && $result->num_rows >= 1) {
             $user = $result->fetch_assoc();
             $rol_app = strtolower(trim($user['rol'] ?? ''));
-            // Verificar contraseña (compatible con hash y texto plano)
+
             if (password_verify($password, $user['password']) || $password === $user['password']) {
+                session_regenerate_id(true);
+
                 $_SESSION['user_id'] = $user['id'];
                 $_SESSION['user_name'] = $user['name'];
                 $_SESSION['user_rol'] = $rol_app;
@@ -30,44 +37,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'rol_original' => $user['rol']
                 ];
 
-                // Redirigir según el rol
+                $redirect = null;
                 switch ($rol_app) {
                     case 'admin':
-                        header("Location: admin/admin.php");
-                        exit();
+                        $redirect = 'admin/admin.php';
+                        break;
                     case 'pm':
-                        header("Location: pm/dashboard.php");
-                        exit();
+                        $redirect = 'pm/dashboard.php';
+                        break;
                     case 'responsable':
-                        header("Location: responsable/dashboard.php");
-                        exit();
                     case 'servicio_especializado':
-                        header("Location: responsable/dashboard.php");
-                        exit();
+                        $redirect = 'responsable/dashboard.php';
+                        break;
                     default:
-                        // Fallback: mapear sinónimos y/o verificar si es Servicio Especializado registrado
                         if (in_array($rol_app, ['trabajador','worker','operario','operador','servicio_especializado'])) {
                             $_SESSION['user_rol'] = 'servicio_especializado';
                             $_SESSION['usuario']['rol'] = 'servicio_especializado';
-                            header("Location: responsable/dashboard.php");
-                            exit();
+                            $redirect = 'responsable/dashboard.php';
+                        } else {
+                            $stmt2 = $conn->prepare("SELECT id FROM empleados WHERE id = ? AND activo = 1");
+                            $stmt2->bind_param("i", $user['id']);
+                            $stmt2->execute();
+                            $res2 = $stmt2->get_result();
+                            if ($res2 && $res2->num_rows === 1) {
+                                $_SESSION['user_rol'] = 'servicio_especializado';
+                                $_SESSION['usuario']['rol'] = 'servicio_especializado';
+                                $redirect = 'responsable/dashboard.php';
+                            } else {
+                                $error = 'Tu rol no está autorizado para este acceso.';
+                            }
+                            $stmt2->close();
                         }
-                        // Verificar si existe en servicios especializados activos; si sí, tratarlo como tal
-                        $stmt2 = $conn->prepare("SELECT id FROM empleados WHERE id = ? AND activo = 1");
-                        $stmt2->bind_param("i", $user['id']);
-                        $stmt2->execute();
-                        $res2 = $stmt2->get_result();
-                        if ($res2 && $res2->num_rows === 1) {
-                            $_SESSION['user_rol'] = 'servicio_especializado';
-                            $_SESSION['usuario']['rol'] = 'servicio_especializado';
-                            header("Location: responsable/dashboard.php");
-                            exit();
-                        }
-                        // Rol no reconocido; cerrar sesión por seguridad
-                        session_unset();
-                        session_destroy();
-                        header("Location: login.php?error=rol");
+                        break;
+                }
+
+                if (!$redirect) {
+                    if (!isset($error)) {
+                        $error = 'No se encontró un panel disponible para tu rol.';
+                    }
+                    session_unset();
+                    session_destroy();
+                } else {
+                    $payload = [
+                        'success' => true,
+                        'redirect' => $redirect,
+                        'rol' => $_SESSION['user_rol'],
+                        'user' => [
+                            'id' => $user['id'],
+                            'name' => $user['name'],
+                            'email' => $usuario
+                        ]
+                    ];
+
+                    $stmt->close();
+                    $conn->close();
+
+                    if ($isAjax) {
+                        header('Content-Type: application/json');
+                        echo json_encode($payload);
                         exit();
+                    }
+
+                    header("Location: {$redirect}");
+                    exit();
                 }
             } else {
                 $error = "Contraseña incorrecta.";
@@ -75,8 +107,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $error = "Usuario no encontrado o inactivo.";
         }
-        $stmt->close();
+
+        if (isset($stmt) && $stmt instanceof mysqli_stmt) {
+            $stmt->close();
+        }
         $conn->close();
+    }
+
+    if ($isAjax) {
+        http_response_code(400);
+        header('Content-Type: application/json');
+        echo json_encode([
+            'success' => false,
+            'error' => $error ?: 'No se pudo iniciar sesión. Inténtalo de nuevo.'
+        ]);
+        exit();
     }
 }
 ?>
@@ -85,6 +130,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1a2332">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="manifest" href="public/manifest.webmanifest">
+    <link rel="apple-touch-icon" href="recursos/logo.png">
     <title>Iniciar Sesión - Sistema de Gestión</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
@@ -165,6 +214,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             width: 100%;
             box-shadow: 0 28px 48px rgba(0, 0, 0, 0.35);
             border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .offline-status {
+            display: none;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-radius: 18px;
+            margin-bottom: 24px;
+            font-size: 14px;
+            font-weight: 600;
+            background: rgba(255, 193, 7, 0.16);
+            color: #8a6d00;
+        }
+
+        .offline-status.online {
+            background: rgba(34, 197, 94, 0.12);
+            color: #166534;
+        }
+
+        .offline-status .badge {
+            margin-left: auto;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(0, 0, 0, 0.08);
+            font-size: 12px;
+            font-weight: 700;
         }
 
         .header {
@@ -518,6 +594,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
             <?php endif; ?>
 
+            <div id="loginOfflineBanner" class="offline-status">
+                <span id="loginOfflineText">📡 Verificando conexión…</span>
+                <span id="loginOfflineBadge" class="badge" style="display:none;">0</span>
+            </div>
+
+            <div id="loginDynamicError" class="error-alert" role="alert" style="display:none;">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span id="loginDynamicErrorText"></span>
+            </div>
+
             <form class="form-container" action="login.php" method="POST" id="loginForm">
             <div class="form-group">
                 <label class="form-label" for="usuario">Correo Electrónico</label>
@@ -585,77 +671,254 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
+    <script src="public/js/pwa.js"></script>
     <script>
-        // Password visibility toggle
         function togglePassword() {
             const passwordInput = document.getElementById('password');
             const toggleIcon = document.getElementById('passwordToggleIcon');
             const toggleButton = document.querySelector('.password-toggle');
-            
+
+            if (!passwordInput || !toggleIcon || !toggleButton) {
+                return;
+            }
+
             if (passwordInput.type === 'password') {
                 passwordInput.type = 'text';
-                toggleIcon.classList.remove('fa-eye');
-                toggleIcon.classList.add('fa-eye-slash');
+                toggleIcon.classList.replace('fa-eye', 'fa-eye-slash');
                 toggleButton.setAttribute('aria-label', 'Ocultar contraseña');
             } else {
                 passwordInput.type = 'password';
-                toggleIcon.classList.remove('fa-eye-slash');
-                toggleIcon.classList.add('fa-eye');
+                toggleIcon.classList.replace('fa-eye-slash', 'fa-eye');
                 toggleButton.setAttribute('aria-label', 'Mostrar contraseña');
             }
         }
 
-        // Form submission handling
-        document.getElementById('loginForm').addEventListener('submit', function(e) {
+        document.addEventListener('DOMContentLoaded', function () {
+            const form = document.getElementById('loginForm');
             const loginButton = document.getElementById('loginButton');
-            loginButton.classList.add('loading');
-            loginButton.disabled = true;
-        });
+            const userInput = document.getElementById('usuario');
+            const passwordInput = document.getElementById('password');
+            const offlineBanner = document.getElementById('loginOfflineBanner');
+            const offlineText = document.getElementById('loginOfflineText');
+            const offlineBadge = document.getElementById('loginOfflineBadge');
+            const dynamicError = document.getElementById('loginDynamicError');
+            const dynamicErrorText = document.getElementById('loginDynamicErrorText');
+            const serverErrorAlert = document.querySelector('[role="alert"].error-alert:not(#loginDynamicError)');
+            const OFFLINE_ALLOWED_ROLES = ['responsable', 'servicio_especializado'];
+            let storedCredentialsCount = 0;
 
-        // Auto-focus on email field if empty
-        document.addEventListener('DOMContentLoaded', function() {
-            const emailInput = document.getElementById('usuario');
-            if (!emailInput.value.trim()) {
-                emailInput.focus();
+            if (userInput && !userInput.value) {
+                userInput.focus();
             }
-        });
 
-        // Auto-hide error message after 6 seconds
-        <?php if (isset($error)): ?>
-        setTimeout(function() {
-            const errorAlert = document.querySelector('.error-alert');
-            if (errorAlert) {
-                errorAlert.style.opacity = '0';
-                errorAlert.style.transform = 'translateY(-10px)';
-                setTimeout(() => {
-                    if (errorAlert.parentNode) {
-                        errorAlert.parentNode.removeChild(errorAlert);
+            const asistencia = window.asistenciaPWA;
+            if (asistencia && typeof asistencia.init === 'function') {
+                asistencia.init();
+            }
+
+            refreshStoredCredentials();
+            updateStatusBanner();
+
+            window.addEventListener('online', updateStatusBanner);
+            window.addEventListener('offline', updateStatusBanner);
+
+            if (form) {
+                form.addEventListener('submit', async function (event) {
+                    event.preventDefault();
+                    hideError();
+
+                    const usuario = (userInput.value || '').trim();
+                    const password = passwordInput.value || '';
+
+                    if (!usuario || !password) {
+                        showError('Ingresa tu usuario y contraseña.');
+                        return;
                     }
-                }, 300);
-            }
-        }, 6000);
-        <?php endif; ?>
 
-        // Enhanced keyboard navigation
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && e.target.tagName !== 'BUTTON' && e.target.type !== 'submit') {
-                const form = document.getElementById('loginForm');
-                const formData = new FormData(form);
-                if (formData.get('usuario') && formData.get('password')) {
-                    form.submit();
+                    if (!navigator.onLine) {
+                        await handleOfflineLogin(usuario, password);
+                    } else {
+                        await handleOnlineLogin(usuario, password);
+                    }
+                });
+            }
+
+            if (serverErrorAlert) {
+                setTimeout(() => {
+                    serverErrorAlert.style.opacity = '0';
+                    serverErrorAlert.style.transform = 'translateY(-10px)';
+                    setTimeout(() => {
+                        if (serverErrorAlert.parentNode) {
+                            serverErrorAlert.parentNode.removeChild(serverErrorAlert);
+                        }
+                    }, 320);
+                }, 6000);
+            }
+
+            document.querySelectorAll('.form-input').forEach((input) => {
+                input.addEventListener('focus', function () {
+                    this.parentElement.classList.add('focused');
+                });
+
+                input.addEventListener('blur', function () {
+                    this.parentElement.classList.remove('focused');
+                });
+            });
+
+            function isRoleAllowed(rol) {
+                if (!rol) return false;
+                return OFFLINE_ALLOWED_ROLES.includes(String(rol).toLowerCase());
+            }
+
+            async function handleOnlineLogin(usuario, password) {
+                setLoading(true);
+                try {
+                    const formData = new FormData(form);
+                    formData.append('ajax', '1');
+                    const response = await fetch('login.php', {
+                        method: 'POST',
+                        body: formData,
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                        credentials: 'include'
+                    });
+
+                    const data = await response.json();
+                    if (!response.ok || !data.success) {
+                        throw new Error(data && data.error ? data.error : 'No se pudo iniciar sesión.');
+                    }
+
+                    if (isRoleAllowed(data.rol) && asistencia && asistencia.auth && typeof asistencia.auth.saveCredential === 'function') {
+                        await asistencia.auth.saveCredential({
+                            username: usuario,
+                            password,
+                            rol: data.rol || '',
+                            redirect: data.redirect || 'responsable/dashboard.php',
+                            nombre: data.user && data.user.name ? data.user.name : ''
+                        });
+                    }
+
+                    await refreshStoredCredentials();
+                    window.location.href = data.redirect || 'responsable/dashboard.php';
+                } catch (error) {
+                    console.error('Error login en línea', error);
+                    showError(error.message || 'No se pudo iniciar sesión.');
+                    setLoading(false);
                 }
             }
-        });
 
-        // Add visual feedback for form interactions
-        document.querySelectorAll('.form-input').forEach(input => {
-            input.addEventListener('focus', function() {
-                this.parentElement.classList.add('focused');
-            });
-            
-            input.addEventListener('blur', function() {
-                this.parentElement.classList.remove('focused');
-            });
+            async function handleOfflineLogin(usuario, password) {
+                setLoading(true);
+                try {
+                    if (!asistencia || !asistencia.auth || typeof asistencia.auth.validateCredential !== 'function') {
+                        throw new Error('Este dispositivo no tiene credenciales guardadas.');
+                    }
+
+                    const record = await asistencia.auth.validateCredential(usuario, password);
+                    if (!record || !isRoleAllowed(record.rol)) {
+                        throw new Error('Las credenciales no coinciden con un registro guardado.');
+                    }
+
+                    if (offlineText) {
+                        offlineText.textContent = '🔐 Credenciales verificadas sin conexión. Abriendo panel…';
+                    }
+
+                    setTimeout(() => {
+                        window.location.href = record.redirect || 'responsable/dashboard.php';
+                    }, 450);
+                } catch (error) {
+                    console.warn('Error login offline', error);
+                    showError(error.message || 'No se pudo validar sin conexión.');
+                    setLoading(false);
+                }
+            }
+
+            function setLoading(isLoading) {
+                if (!loginButton) return;
+                if (isLoading) {
+                    loginButton.classList.add('loading');
+                    loginButton.disabled = true;
+                } else {
+                    loginButton.classList.remove('loading');
+                    loginButton.disabled = false;
+                }
+            }
+
+            function showError(message) {
+                if (!dynamicError || !dynamicErrorText) return;
+                dynamicErrorText.textContent = message;
+                dynamicError.style.display = 'flex';
+            }
+
+            function hideError() {
+                if (!dynamicError || !dynamicErrorText) return;
+                dynamicErrorText.textContent = '';
+                dynamicError.style.display = 'none';
+            }
+
+            async function refreshStoredCredentials() {
+                if (!asistencia || !asistencia.auth || typeof asistencia.auth.getAllCredentials !== 'function') {
+                    storedCredentialsCount = 0;
+                    updateStatusBanner();
+                    return;
+                }
+
+                try {
+                    const credentials = await asistencia.auth.getAllCredentials();
+                    const allowed = [];
+
+                    if (Array.isArray(credentials)) {
+                        for (const record of credentials) {
+                            if (record && isRoleAllowed(record.rol)) {
+                                allowed.push(record);
+                            } else if (record && record.username && asistencia.auth && typeof asistencia.auth.removeCredential === 'function') {
+                                try {
+                                    await asistencia.auth.removeCredential(record.username);
+                                } catch (cleanupError) {
+                                    console.warn('No se pudo limpiar credencial no permitida', cleanupError);
+                                }
+                            }
+                        }
+                    }
+
+                    storedCredentialsCount = allowed.length;
+
+                    if (storedCredentialsCount > 0 && userInput && !userInput.value) {
+                        const recent = allowed.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+                        if (recent && recent.username) {
+                            userInput.value = recent.username;
+                        }
+                    }
+                } catch (error) {
+                    console.warn('No se pudo leer credenciales guardadas', error);
+                    storedCredentialsCount = 0;
+                }
+
+                updateStatusBanner();
+            }
+
+            function updateStatusBanner() {
+                if (!offlineBanner || !offlineText) return;
+
+                const online = navigator.onLine;
+                const shouldShow = !online;
+                offlineBanner.style.display = shouldShow ? 'flex' : 'none';
+                offlineBanner.classList.toggle('online', false);
+
+                if (!online) {
+                    offlineText.textContent = storedCredentialsCount > 0
+                        ? '📡 Sin conexión. Puedes iniciar sesión con las credenciales guardadas.'
+                        : '📡 Sin conexión. Inicia sesión en línea una vez para activar el modo offline.';
+                }
+
+                if (offlineBadge) {
+                    if (!online && storedCredentialsCount > 0) {
+                        offlineBadge.style.display = 'inline-flex';
+                        offlineBadge.textContent = `${storedCredentialsCount} guardada${storedCredentialsCount !== 1 ? 's' : ''}`;
+                    } else {
+                        offlineBadge.style.display = 'none';
+                    }
+                }
+            }
         });
     </script>
 </body>

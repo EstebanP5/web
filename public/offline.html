@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modo sin conexión - Asistencia</title>
+    <link rel="manifest" href="./manifest.webmanifest">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #ffffff;
+            min-height: 100vh;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 24px;
+        }
+        .card {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            border-radius: 22px;
+            padding: 32px 28px;
+            max-width: 420px;
+            box-shadow: 0 18px 40px rgba(0,0,0,0.2);
+        }
+        h1 {
+            font-size: 28px;
+            margin-bottom: 12px;
+        }
+        p {
+            font-size: 15px;
+            line-height: 1.6;
+            margin: 8px 0;
+            color: rgba(255,255,255,0.88);
+        }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(17, 25, 40, 0.35);
+            padding: 8px 14px;
+            border-radius: 999px;
+            font-size: 13px;
+            margin-bottom: 18px;
+        }
+        .actions {
+            margin-top: 22px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .actions button,
+        .actions a {
+            background: rgba(255,255,255,0.18);
+            border: none;
+            color: #fff;
+            padding: 12px 16px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+            text-decoration: none;
+        }
+        .actions button:hover,
+        .actions a:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        small {
+            display: block;
+            margin-top: 18px;
+            font-size: 12px;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="badge">📡 Modo sin conexión</div>
+        <h1>Seguimos aquí, incluso sin internet</h1>
+        <p>Tu dispositivo no tiene conexión, pero puedes continuar registrando la asistencia. Guardaremos todo y lo enviaremos automáticamente en cuanto vuelvas a estar en línea.</p>
+        <div class="actions">
+            <button onclick="location.reload()">🔄 Reintentar conexión</button>
+            <a href="./asistencia.php">🔁 Volver al registro</a>
+        </div>
+        <small>Ergo PMS · Servicio Especializado</small>
+    </div>
+</body>
+</html>
