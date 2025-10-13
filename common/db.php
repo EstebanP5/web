@@ -16,6 +16,17 @@ if (!defined('ENV_BOOTSTRAPPED')) {
 	define('ENV_BOOTSTRAPPED', true);
 }
 
+if (!defined('APP_URL')) {
+	$appUrl = getenv('APP_URL');
+	if ($appUrl !== false && $appUrl !== '') {
+		define('APP_URL', rtrim($appUrl, '/'));
+	} else {
+		$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+		$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+		define('APP_URL', rtrim($scheme . '://' . $host, '/'));
+	}
+}
+
 if (!defined('DB_HOST')) {
 	$envHost = getenv('DB_HOST');
 	$defaultHost = 'ergoems.ddns.net';

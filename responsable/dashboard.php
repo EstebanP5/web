@@ -287,7 +287,7 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panel de Servicio Especializado - Ergo PMS</title>
+    <title>Panel de Servicio Especializado - ErgoCuida</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -809,8 +809,8 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
                         <div class="motivo-box" id="motivoBox">
                             <input type="text" id="motivoDescanso" placeholder="Motivo del descanso">
                             <div class="camera-actions" style="margin-top:8px">
-                                <button class="btn-cam btn-confirm" onclick="accionConFoto('descanso')">Iniciar descanso</button>
-                                <button class="btn-cam btn-cancel" onclick="ocultarMotivo()">Cancelar</button>
+                                <button class="btn-cam btn-confirm" type="button" onclick="accionConFoto('descanso')">Iniciar descanso</button>
+                                <button class="btn-cam btn-cancel" type="button" onclick="ocultarMotivo()">Cancelar</button>
                             </div>
                         </div>
 
@@ -819,9 +819,10 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
                             <canvas id="canvas" style="display:none"></canvas>
                             <img id="photo-preview" style="display:none" alt="Vista previa"/>
                             <div class="camera-actions">
-                                <button class="btn-cam" id="btnCapturar" onclick="capturarFoto()">📸 Capturar</button>
-                                <button class="btn-cam btn-confirm" id="btnEnviar" style="display:none" onclick="enviarFoto()">✅ Enviar</button>
-                                <button class="btn-cam btn-cancel" onclick="cerrarCamara()">❌ Cerrar</button>
+                                <button class="btn-cam" type="button" id="btnCambiarCamara" onclick="cambiarCamara()" style="display:none">🔄 Cambiar cámara</button>
+                                <button class="btn-cam" type="button" id="btnCapturar" onclick="capturarFoto()">📸 Capturar</button>
+                                <button class="btn-cam btn-confirm" type="button" id="btnEnviar" style="display:none" onclick="enviarFoto()">✅ Enviar</button>
+                                <button class="btn-cam btn-cancel" type="button" onclick="cerrarCamara()">❌ Cerrar</button>
                             </div>
                         </div>
                     </div>
@@ -926,12 +927,23 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
       <input type="hidden" name="motivo" id="motivoInput"/>
     </form>
 
+    <script src="../public/js/pwa.js"></script>
     <script>
     let stream=null, fotoBlob=null, accionActual=null; 
     let accionEnCurso=false, enviandoFoto=false;
+    let availableCameras = [];
+    let currentCameraIndex = 0;
+    let currentDeviceId = null;
+    let currentFacingMode = 'environment';
         const userId = <?= (int)$user_id ?>;
     let turnoCerradoReciente = <?= $turno_cerrado_reciente ? 'true' : 'false' ?>;
     const bloqueoNuevoTurnoMsg = <?= json_encode($bloqueo_nuevo_turno_msg); ?>;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.asistenciaPWA) {
+                asistenciaPWA.init();
+            }
+        });
 
         function mostrarMotivo(){ document.getElementById('motivoBox').style.display='block'; }
         function ocultarMotivo(){ document.getElementById('motivoBox').style.display='none'; document.getElementById('motivoDescanso').value=''; }
@@ -955,7 +967,7 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
                         if(!m){ alert('Indica el motivo del descanso'); accionEnCurso = false; return; }
             document.getElementById('motivoInput').value = m;
                     } else { document.getElementById('motivoInput').value=''; }
-                    obtenerUbicacion().then(()=>iniciarCamara()).catch(err=>{
+                    obtenerUbicacion().then(()=>iniciarCamara(true)).catch(err=>{
                         accionEnCurso = false;
                         alert(err||'No se pudo obtener ubicación');
                     });
@@ -973,19 +985,196 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
           });
         }
 
-        async function iniciarCamara(){
-          try{
-            stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
-            const v=document.getElementById('video'); v.srcObject=stream;
-            document.getElementById('cameraWrapper').style.display='block';
-            document.getElementById('photo-preview').style.display='none';
-            document.getElementById('btnEnviar').style.display='none';
+                async function iniciarCamara(autoCapture = true){
+                    try{
+                        if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+                            throw new Error('Tu dispositivo no permite usar la cámara desde el navegador.');
+                        }
+
+                        if(stream){
+                            stream.getTracks().forEach(t=>t.stop());
+                            stream = null;
+                        }
+
+                        const constraints = obtenerRestriccionesCamara();
+                        stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+                        const v=document.getElementById('video');
+                        v.srcObject=stream;
+
+                        const track = stream.getVideoTracks()[0];
+                        if(track){
+                            const settings = track.getSettings ? track.getSettings() : {};
+                            if(settings.deviceId){ currentDeviceId = settings.deviceId; }
+                            if(settings.facingMode){ currentFacingMode = settings.facingMode; }
+                        }
+
+                        await actualizarListaCamaras();
+
+                        const wrapper = document.getElementById('cameraWrapper');
+                        const preview = document.getElementById('photo-preview');
                         const btnEnviar = document.getElementById('btnEnviar');
-                        if(btnEnviar){ btnEnviar.disabled=false; btnEnviar.textContent='✅ Enviar'; }
-            // Auto-captura a los 1.2s
-            setTimeout(()=>capturarFoto(),1200);
-          }catch(e){ alert('No se pudo abrir la cámara: '+e.message); accionEnCurso = false; }
-        }
+                        const btnCapturar = document.getElementById('btnCapturar');
+                        const btnCambiar = document.getElementById('btnCambiarCamara');
+
+                        fotoBlob = null;
+                        enviandoFoto = false;
+
+                        if(wrapper){ wrapper.style.display='block'; }
+                        if(preview){ preview.style.display='none'; preview.removeAttribute('src'); }
+                        if(btnEnviar){
+                            btnEnviar.style.display='none';
+                            btnEnviar.disabled = false;
+                            btnEnviar.textContent = '✅ Enviar';
+                        }
+                        if(btnCapturar){ btnCapturar.disabled = false; }
+                        if(btnCambiar){
+                            btnCambiar.style.display = 'inline-flex';
+                            btnCambiar.disabled = false;
+                        }
+
+                        actualizarBotonCambiarCamara();
+
+                        if(autoCapture){
+                            setTimeout(()=>capturarFoto(),1200);
+                        }
+                    }catch(e){
+                        console.error('No se pudo abrir la cámara', e);
+                        alert('No se pudo abrir la cámara: ' + (e.message || e));
+                        accionEnCurso = false;
+                        stream = null;
+                    }
+                }
+
+                            function obtenerRestriccionesCamara(){
+                                const videoConstraints = {
+                                    width: { ideal: 1280 },
+                                    height: { ideal: 720 }
+                                };
+
+                                if(currentDeviceId){
+                                    videoConstraints.deviceId = { exact: currentDeviceId };
+                                } else if(currentFacingMode){
+                                    videoConstraints.facingMode = { ideal: currentFacingMode };
+                                }
+
+                                return {
+                                    audio: false,
+                                    video: videoConstraints
+                                };
+                            }
+
+                            async function actualizarListaCamaras(){
+                                if(!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== 'function'){
+                                    availableCameras = [];
+                                    return;
+                                }
+
+                                try{
+                                    const devices = await navigator.mediaDevices.enumerateDevices();
+                                    const videoInputs = devices.filter(device => device.kind === 'videoinput');
+
+                                    if(videoInputs.length){
+                                        availableCameras = videoInputs;
+                                        if(currentDeviceId){
+                                            const posicionActual = videoInputs.findIndex(device => device.deviceId === currentDeviceId);
+                                            if(posicionActual >= 0){
+                                                currentCameraIndex = posicionActual;
+                                            } else if(currentCameraIndex >= videoInputs.length){
+                                                currentCameraIndex = 0;
+                                            }
+                                        } else if(currentCameraIndex >= videoInputs.length){
+                                            currentCameraIndex = 0;
+                                        }
+                                    } else {
+                                        availableCameras = [];
+                                    }
+                                } catch(error){
+                                    console.warn('No se pudieron enumerar las cámaras disponibles', error);
+                                }
+                            }
+
+                            function obtenerEtiquetaCamara(dispositivo){
+                                if(!dispositivo || !dispositivo.label){
+                                    return '';
+                                }
+                                const lower = dispositivo.label.toLowerCase();
+                                if(lower.includes('front') || lower.includes('frontal')){
+                                    return 'cámara frontal';
+                                }
+                                if(lower.includes('back') || lower.includes('rear') || lower.includes('trasera') || lower.includes('environment')){
+                                    return 'cámara trasera';
+                                }
+                                return dispositivo.label;
+                            }
+
+                            function actualizarBotonCambiarCamara(){
+                                const btn = document.getElementById('btnCambiarCamara');
+                                if(!btn){ return; }
+
+                                if(!stream){
+                                    btn.style.display = 'none';
+                                    return;
+                                }
+
+                                btn.style.display = 'inline-flex';
+
+                                if(!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== 'function'){
+                                    btn.disabled = false;
+                                    btn.textContent = '🔄 Voltear cámara';
+                                    return;
+                                }
+
+                                const total = availableCameras.length;
+                                if(total <= 1){
+                                    btn.disabled = false;
+                                    btn.textContent = '🔄 Voltear cámara';
+                                    return;
+                                }
+
+                                const siguiente = availableCameras[(currentCameraIndex + 1) % total];
+                                const etiqueta = obtenerEtiquetaCamara(siguiente);
+                                btn.disabled = false;
+                                btn.textContent = etiqueta ? `🔄 Cambiar a ${etiqueta}` : '🔄 Cambiar cámara';
+                            }
+
+                            async function cambiarCamara(){
+                                const btn = document.getElementById('btnCambiarCamara');
+                                if(btn){
+                                    btn.disabled = true;
+                                    btn.textContent = '⏳ Cambiando...';
+                                }
+
+                                try{
+                                    if(navigator.mediaDevices && typeof navigator.mediaDevices.enumerateDevices === 'function'){
+                                        await actualizarListaCamaras();
+                                    }
+
+                                    if(availableCameras.length > 1){
+                                        currentCameraIndex = (currentCameraIndex + 1) % availableCameras.length;
+                                        currentDeviceId = availableCameras[currentCameraIndex].deviceId;
+                                        const etiqueta = (obtenerEtiquetaCamara(availableCameras[currentCameraIndex]) || '').toLowerCase();
+                                        if(etiqueta.includes('frontal')){
+                                            currentFacingMode = 'user';
+                                        } else if(etiqueta.includes('trasera') || etiqueta.includes('rear') || etiqueta.includes('back')){
+                                            currentFacingMode = 'environment';
+                                        }
+                                    } else {
+                                        currentDeviceId = null;
+                                        currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+                                    }
+
+                                    await iniciarCamara(false);
+                                } catch(error){
+                                    console.error('No se pudo cambiar de cámara', error);
+                                    alert('No se pudo cambiar de cámara. Intenta nuevamente.');
+                                } finally {
+                                    if(btn){
+                                        btn.disabled = false;
+                                        actualizarBotonCambiarCamara();
+                                    }
+                                }
+                            }
 
         function capturarFoto(){
           if(!stream) return;
@@ -996,12 +1185,26 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
 
                 function cerrarCamara(){
                     if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
-                    document.getElementById('cameraWrapper').style.display='none';
+                    const wrapper = document.getElementById('cameraWrapper');
+                    if(wrapper){ wrapper.style.display='none'; }
                     accionEnCurso = false;
                     fotoBlob = null;
                     enviandoFoto = false;
                     const btnEnviar = document.getElementById('btnEnviar');
                     if(btnEnviar){ btnEnviar.disabled=false; btnEnviar.textContent='✅ Enviar'; }
+                    const btnCapturar = document.getElementById('btnCapturar');
+                    if(btnCapturar){ btnCapturar.disabled=false; }
+                    const btnCambiar = document.getElementById('btnCambiarCamara');
+                    if(btnCambiar){
+                        btnCambiar.style.display='none';
+                        btnCambiar.disabled=false;
+                        btnCambiar.textContent='🔄 Cambiar cámara';
+                    }
+                    const preview = document.getElementById('photo-preview');
+                    if(preview){
+                        preview.style.display='none';
+                        preview.removeAttribute('src');
+                    }
                 }
 
         async function enviarFoto(){
@@ -1037,7 +1240,53 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
                         const res = await fetch('../public/procesar_foto_asistencia.php', { method:'POST', body: fd });
                         const json = await res.json();
                         if(!res.ok || !json.success){ console.error(json); alert('Error guardando foto de asistencia'); enviandoFoto=false; if(btnEnviar){ btnEnviar.disabled=false; btnEnviar.textContent='✅ Enviar'; } return; }
-                    }catch(e){ console.error(e); alert('Error conectando con el procesador de fotos'); enviandoFoto=false; if(btnEnviar){ btnEnviar.disabled=false; btnEnviar.textContent='✅ Enviar'; } return; }
+                    }catch(e){
+                        console.error(e);
+                        if(!navigator.onLine && window.asistenciaPWA){
+                            try{
+                                const motivoValor = document.getElementById('motivoInput').value || '';
+                                await asistenciaPWA.queueSubmissionFromData({
+                                    url: '../public/procesar_foto_asistencia.php',
+                                    method: 'POST',
+                                    fields: {
+                                        empleado_id: userId,
+                                        grupo_id: proyectoId,
+                                        lat,
+                                        lng,
+                                        direccion,
+                                        tipo_asistencia: tipoFoto,
+                                        motivo: motivoValor
+                                    },
+                                    foto: fotoBlob,
+                                    filename: `asistencia-${userId}-${Date.now()}.jpg`
+                                });
+
+                                await asistenciaPWA.queueSubmissionFromData({
+                                    url: window.location.href,
+                                    method: 'POST',
+                                    fields: {
+                                        accion_asistencia: accionActual,
+                                        proyecto_id: proyectoId,
+                                        lat,
+                                        lng,
+                                        motivo: motivoValor
+                                    }
+                                });
+
+                                alert('📦 Registro guardado sin conexión. Lo enviaremos automáticamente cuando vuelva la red.');
+                                cerrarCamara();
+                                accionEnCurso = false;
+                                enviandoFoto = false;
+                                return;
+                            }catch(queueErr){
+                                console.error('No se pudo guardar la acción offline', queueErr);
+                            }
+                        }
+                        alert('Error conectando con el procesador de fotos');
+                        enviandoFoto=false;
+                        if(btnEnviar){ btnEnviar.disabled=false; btnEnviar.textContent='✅ Enviar'; }
+                        return;
+                    }
 
           // Registrar evento en BD de asistencia/descansos
           cerrarCamara();

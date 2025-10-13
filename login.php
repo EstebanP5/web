@@ -134,7 +134,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta name="apple-mobile-web-app-capable" content="yes">
     <link rel="manifest" href="public/manifest.webmanifest">
     <link rel="apple-touch-icon" href="recursos/logo.png">
-    <title>Iniciar Sesión - Sistema de Gestión</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+    <link rel="preload" href="recursos/fondo3.jpg" as="image" fetchpriority="high">
+    <link rel="preload" href="recursos/logo.png" as="image" fetchpriority="high">
+    <title>Iniciar Sesión - ErgoCuida</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -251,20 +256,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .brand-lockup {
             display: inline-flex;
             align-items: center;
-            justify-content: center;
-            padding: 14px 26px;
+            gap: 18px;
+            padding: 16px 28px;
             border-radius: 24px;
             border: 1px solid rgba(255, 107, 53, 0.18);
-            background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(255, 239, 226, 0.85));
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(255, 239, 226, 0.85));
             box-shadow: 0 18px 30px rgba(255, 107, 53, 0.18);
             margin-bottom: 24px;
+            min-height: 96px;
         }
 
-        .brand-lockup img {
+        .brand-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 22px;
+            background: linear-gradient(135deg, var(--orange) 0%, var(--orange-dark) 100%);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--white);
+            font-size: 28px;
+            box-shadow: 0 18px 32px rgba(229, 81, 0, 0.3);
+            position: relative;
+        }
+
+        .brand-icon::after {
+            content: '';
+            position: absolute;
+            inset: -6px;
+            border-radius: 26px;
+            border: 2px solid rgba(255, 255, 255, 0.45);
+            opacity: 0.9;
+        }
+
+        .brand-text {
+            text-align: left;
+        }
+
+        .brand-eyebrow {
             display: block;
-            height: 68px;
-            width: auto;
-            max-width: 100%;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.38em;
+            color: var(--gray-400);
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .brand-name {
+            display: block;
+            font-size: 30px;
+            line-height: 1.1;
+            font-weight: 800;
+            color: var(--navy-blue);
+            letter-spacing: 0.015em;
+        }
+
+        .brand-name strong {
+            color: var(--orange-dark);
+            text-shadow: 0 12px 28px rgba(229, 81, 0, 0.28);
         }
 
         .subtitle {
@@ -511,11 +561,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             .brand-lockup {
-                padding: 12px 22px;
+                padding: 18px 22px;
+                min-height: 90px;
+                gap: 16px;
             }
 
-            .brand-lockup img {
-                height: 60px;
+            .brand-icon {
+                width: 56px;
+                height: 56px;
+            }
+
+            .brand-name {
+                font-size: 28px;
             }
 
             .form-input {
@@ -532,8 +589,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 padding: 24px 20px 26px;
             }
 
-            .brand-lockup img {
-                height: 54px;
+            .brand-lockup {
+                padding: 16px 18px;
+                gap: 14px;
+            }
+
+            .brand-icon {
+                width: 52px;
+                height: 52px;
+                border-radius: 18px;
+            }
+
+            .brand-name {
+                font-size: 24px;
+            }
+
+            .brand-eyebrow {
+                font-size: 11px;
+                letter-spacing: 0.32em;
             }
 
             .social-footer {
@@ -576,13 +649,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
     <div class="app-shell">
         <header class="brand-header">
-            <img src="recursos/logo.png" alt="ErgoSolar" loading="lazy">
+            <img src="recursos/logo.png" alt="ErgoCuida" loading="eager" decoding="async" fetchpriority="high">
         </header>
 
         <div class="login-container">
             <header class="header">
                 <div class="brand-lockup">
-                    <img src="recursos/ergopm.png" alt="Ergo PM" loading="lazy">
+                    <div class="brand-icon">
+                        <i class="fas fa-shield-halved"></i>
+                    </div>
+                    <div class="brand-text">
+                        <span class="brand-eyebrow">PLATAFORMA</span>
+                        <span class="brand-name"><strong>Ergo</strong>Cuida</span>
+                    </div>
                 </div>
                 <p class="subtitle">Acceso seguro a tu plataforma de proyectos</p>
             </header>
@@ -652,10 +731,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
 
         <div class="social-footer">
-            <a href="https://www.linkedin.com/company/ergosolar" target="_blank" rel="noopener">
+            <a href="https://www.linkedin.com/company/ergocuida" target="_blank" rel="noopener">
                 <i class="fab fa-linkedin-in"></i>
             </a>
-            <a href="https://twitter.com/ergosolar" target="_blank" rel="noopener">
+            <a href="https://twitter.com/ergocuida" target="_blank" rel="noopener">
                 <i class="fab fa-twitter"></i>
             </a>
             <a href="https://www.youtube.com/" target="_blank" rel="noopener">
@@ -667,259 +746,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <a href="https://www.instagram.com/" target="_blank" rel="noopener">
                 <i class="fab fa-instagram"></i>
             </a>
-            <span>ErgoSolar.mx</span>
+            <span>ErgoCuida.mx</span>
         </div>
     </div>
 
-    <script src="public/js/pwa.js"></script>
-    <script>
-        function togglePassword() {
-            const passwordInput = document.getElementById('password');
-            const toggleIcon = document.getElementById('passwordToggleIcon');
-            const toggleButton = document.querySelector('.password-toggle');
-
-            if (!passwordInput || !toggleIcon || !toggleButton) {
-                return;
-            }
-
-            if (passwordInput.type === 'password') {
-                passwordInput.type = 'text';
-                toggleIcon.classList.replace('fa-eye', 'fa-eye-slash');
-                toggleButton.setAttribute('aria-label', 'Ocultar contraseña');
-            } else {
-                passwordInput.type = 'password';
-                toggleIcon.classList.replace('fa-eye-slash', 'fa-eye');
-                toggleButton.setAttribute('aria-label', 'Mostrar contraseña');
-            }
-        }
-
-        document.addEventListener('DOMContentLoaded', function () {
-            const form = document.getElementById('loginForm');
-            const loginButton = document.getElementById('loginButton');
-            const userInput = document.getElementById('usuario');
-            const passwordInput = document.getElementById('password');
-            const offlineBanner = document.getElementById('loginOfflineBanner');
-            const offlineText = document.getElementById('loginOfflineText');
-            const offlineBadge = document.getElementById('loginOfflineBadge');
-            const dynamicError = document.getElementById('loginDynamicError');
-            const dynamicErrorText = document.getElementById('loginDynamicErrorText');
-            const serverErrorAlert = document.querySelector('[role="alert"].error-alert:not(#loginDynamicError)');
-            const OFFLINE_ALLOWED_ROLES = ['responsable', 'servicio_especializado'];
-            let storedCredentialsCount = 0;
-
-            if (userInput && !userInput.value) {
-                userInput.focus();
-            }
-
-            const asistencia = window.asistenciaPWA;
-            if (asistencia && typeof asistencia.init === 'function') {
-                asistencia.init();
-            }
-
-            refreshStoredCredentials();
-            updateStatusBanner();
-
-            window.addEventListener('online', updateStatusBanner);
-            window.addEventListener('offline', updateStatusBanner);
-
-            if (form) {
-                form.addEventListener('submit', async function (event) {
-                    event.preventDefault();
-                    hideError();
-
-                    const usuario = (userInput.value || '').trim();
-                    const password = passwordInput.value || '';
-
-                    if (!usuario || !password) {
-                        showError('Ingresa tu usuario y contraseña.');
-                        return;
-                    }
-
-                    if (!navigator.onLine) {
-                        await handleOfflineLogin(usuario, password);
-                    } else {
-                        await handleOnlineLogin(usuario, password);
-                    }
-                });
-            }
-
-            if (serverErrorAlert) {
-                setTimeout(() => {
-                    serverErrorAlert.style.opacity = '0';
-                    serverErrorAlert.style.transform = 'translateY(-10px)';
-                    setTimeout(() => {
-                        if (serverErrorAlert.parentNode) {
-                            serverErrorAlert.parentNode.removeChild(serverErrorAlert);
-                        }
-                    }, 320);
-                }, 6000);
-            }
-
-            document.querySelectorAll('.form-input').forEach((input) => {
-                input.addEventListener('focus', function () {
-                    this.parentElement.classList.add('focused');
-                });
-
-                input.addEventListener('blur', function () {
-                    this.parentElement.classList.remove('focused');
-                });
-            });
-
-            function isRoleAllowed(rol) {
-                if (!rol) return false;
-                return OFFLINE_ALLOWED_ROLES.includes(String(rol).toLowerCase());
-            }
-
-            async function handleOnlineLogin(usuario, password) {
-                setLoading(true);
-                try {
-                    const formData = new FormData(form);
-                    formData.append('ajax', '1');
-                    const response = await fetch('login.php', {
-                        method: 'POST',
-                        body: formData,
-                        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                        credentials: 'include'
-                    });
-
-                    const data = await response.json();
-                    if (!response.ok || !data.success) {
-                        throw new Error(data && data.error ? data.error : 'No se pudo iniciar sesión.');
-                    }
-
-                    if (isRoleAllowed(data.rol) && asistencia && asistencia.auth && typeof asistencia.auth.saveCredential === 'function') {
-                        await asistencia.auth.saveCredential({
-                            username: usuario,
-                            password,
-                            rol: data.rol || '',
-                            redirect: data.redirect || 'responsable/dashboard.php',
-                            nombre: data.user && data.user.name ? data.user.name : ''
-                        });
-                    }
-
-                    await refreshStoredCredentials();
-                    window.location.href = data.redirect || 'responsable/dashboard.php';
-                } catch (error) {
-                    console.error('Error login en línea', error);
-                    showError(error.message || 'No se pudo iniciar sesión.');
-                    setLoading(false);
-                }
-            }
-
-            async function handleOfflineLogin(usuario, password) {
-                setLoading(true);
-                try {
-                    if (!asistencia || !asistencia.auth || typeof asistencia.auth.validateCredential !== 'function') {
-                        throw new Error('Este dispositivo no tiene credenciales guardadas.');
-                    }
-
-                    const record = await asistencia.auth.validateCredential(usuario, password);
-                    if (!record || !isRoleAllowed(record.rol)) {
-                        throw new Error('Las credenciales no coinciden con un registro guardado.');
-                    }
-
-                    if (offlineText) {
-                        offlineText.textContent = '🔐 Credenciales verificadas sin conexión. Abriendo panel…';
-                    }
-
-                    setTimeout(() => {
-                        window.location.href = record.redirect || 'responsable/dashboard.php';
-                    }, 450);
-                } catch (error) {
-                    console.warn('Error login offline', error);
-                    showError(error.message || 'No se pudo validar sin conexión.');
-                    setLoading(false);
-                }
-            }
-
-            function setLoading(isLoading) {
-                if (!loginButton) return;
-                if (isLoading) {
-                    loginButton.classList.add('loading');
-                    loginButton.disabled = true;
-                } else {
-                    loginButton.classList.remove('loading');
-                    loginButton.disabled = false;
-                }
-            }
-
-            function showError(message) {
-                if (!dynamicError || !dynamicErrorText) return;
-                dynamicErrorText.textContent = message;
-                dynamicError.style.display = 'flex';
-            }
-
-            function hideError() {
-                if (!dynamicError || !dynamicErrorText) return;
-                dynamicErrorText.textContent = '';
-                dynamicError.style.display = 'none';
-            }
-
-            async function refreshStoredCredentials() {
-                if (!asistencia || !asistencia.auth || typeof asistencia.auth.getAllCredentials !== 'function') {
-                    storedCredentialsCount = 0;
-                    updateStatusBanner();
-                    return;
-                }
-
-                try {
-                    const credentials = await asistencia.auth.getAllCredentials();
-                    const allowed = [];
-
-                    if (Array.isArray(credentials)) {
-                        for (const record of credentials) {
-                            if (record && isRoleAllowed(record.rol)) {
-                                allowed.push(record);
-                            } else if (record && record.username && asistencia.auth && typeof asistencia.auth.removeCredential === 'function') {
-                                try {
-                                    await asistencia.auth.removeCredential(record.username);
-                                } catch (cleanupError) {
-                                    console.warn('No se pudo limpiar credencial no permitida', cleanupError);
-                                }
-                            }
-                        }
-                    }
-
-                    storedCredentialsCount = allowed.length;
-
-                    if (storedCredentialsCount > 0 && userInput && !userInput.value) {
-                        const recent = allowed.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
-                        if (recent && recent.username) {
-                            userInput.value = recent.username;
-                        }
-                    }
-                } catch (error) {
-                    console.warn('No se pudo leer credenciales guardadas', error);
-                    storedCredentialsCount = 0;
-                }
-
-                updateStatusBanner();
-            }
-
-            function updateStatusBanner() {
-                if (!offlineBanner || !offlineText) return;
-
-                const online = navigator.onLine;
-                const shouldShow = !online;
-                offlineBanner.style.display = shouldShow ? 'flex' : 'none';
-                offlineBanner.classList.toggle('online', false);
-
-                if (!online) {
-                    offlineText.textContent = storedCredentialsCount > 0
-                        ? '📡 Sin conexión. Puedes iniciar sesión con las credenciales guardadas.'
-                        : '📡 Sin conexión. Inicia sesión en línea una vez para activar el modo offline.';
-                }
-
-                if (offlineBadge) {
-                    if (!online && storedCredentialsCount > 0) {
-                        offlineBadge.style.display = 'inline-flex';
-                        offlineBadge.textContent = `${storedCredentialsCount} guardada${storedCredentialsCount !== 1 ? 's' : ''}`;
-                    } else {
-                        offlineBadge.style.display = 'none';
-                    }
-                }
-            }
-        });
-    </script>
+    <script src="public/js/pwa.js" defer></script>
+    <script src="public/js/login.js" defer></script>
 </body>
 </html>

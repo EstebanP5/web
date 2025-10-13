@@ -1,6 +1,6 @@
 {
-  "name": "Ergo PMS Asistencia",
-  "short_name": "Asistencia",
+  "name": "ErgoCuida Asistencia",
+  "short_name": "ErgoCuida",
   "description": "Registro de asistencia para servicios especializados con soporte offline.",
   "start_url": "./asistencia.php",
   "scope": "/public/",

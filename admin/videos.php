@@ -3,6 +3,24 @@
 session_start();
 require_once '../includes/db.php';
 
+if (!function_exists('admin_fetch_all_assoc')) {
+    function admin_fetch_all_assoc($result) {
+        if (!$result) {
+            return [];
+        }
+
+        if (method_exists($result, 'fetch_all')) {
+            return $result->fetch_all(MYSQLI_ASSOC);
+        }
+
+        $rows = [];
+        while ($row = $result->fetch_assoc()) {
+            $rows[] = $row;
+        }
+        return $rows;
+    }
+}
+
 // Verificar autenticación y rol de administrador
 if (!isset($_SESSION['user_id']) || $_SESSION['user_rol'] !== 'admin') {
     header('Location: ../login.php');
@@ -15,8 +33,15 @@ $mensaje_exito = '';
 $mensaje_error = '';
 
 // Obtener lista de proyectos para asignación
-$proyectos_query = "SELECT id, nombre FROM grupos WHERE activo = 1 ORDER BY nombre";
-$proyectos = $conn->query($proyectos_query)->fetch_all(MYSQLI_ASSOC);
+$proyectos = [];
+try {
+    $proyectos_query = "SELECT id, nombre FROM grupos WHERE activo = 1 ORDER BY nombre";
+    $proyectos_result = $conn->query($proyectos_query);
+    $proyectos = admin_fetch_all_assoc($proyectos_result);
+} catch (mysqli_sql_exception $e) {
+    error_log('Error al cargar proyectos en admin/videos.php: ' . $e->getMessage());
+    $mensaje_error = 'No se pudieron cargar los proyectos disponibles. Intenta nuevamente.';
+}
 
 // Procesar subida de video
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['subir_video'])) {
@@ -95,21 +120,30 @@ if (isset($_GET['eliminar'])) {
 }
 
 // Listar videos con información del proyecto y usuario
-$videos_query = "
-    SELECT v.*, g.nombre as proyecto_nombre, u.name as subido_por_nombre 
-    FROM videos_capacitacion v 
-    LEFT JOIN grupos g ON v.proyecto_id = g.id 
-    LEFT JOIN users u ON v.subido_por = u.id 
-    ORDER BY v.fecha_subida DESC
-";
-$videos = $conn->query($videos_query)->fetch_all(MYSQLI_ASSOC);
+$videos = [];
+try {
+    $videos_query = "
+        SELECT v.*, g.nombre as proyecto_nombre, u.name as subido_por_nombre 
+        FROM videos_capacitacion v 
+        LEFT JOIN grupos g ON v.proyecto_id = g.id 
+        LEFT JOIN users u ON v.subido_por = u.id 
+        ORDER BY v.fecha_subida DESC
+    ";
+    $videos_result = $conn->query($videos_query);
+    $videos = admin_fetch_all_assoc($videos_result);
+} catch (mysqli_sql_exception $e) {
+    error_log('Error al cargar videos en admin/videos.php: ' . $e->getMessage());
+    if (!$mensaje_error) {
+        $mensaje_error = 'No se pudieron cargar los videos disponibles en este momento.';
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestión de Videos - Ergo PMS</title>
+    <title>Gestión de Videos - ErgoCuida</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>

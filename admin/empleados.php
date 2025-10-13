@@ -428,7 +428,7 @@ if ($credencialFiltro === 'con') {
     $activeFilters[] = 'Sin credenciales';
 }
 
-$pageTitle = 'Gestión de Servicios Especializados - Ergo PMS';
+$pageTitle = 'Gestión de Servicios Especializados - ErgoCuida';
 $activePage = 'employees';
 $pageHeading = 'Gestión de Servicios Especializados';
 $pageDescription = 'Administra perfiles, asignaciones y estados del personal externalizado.';

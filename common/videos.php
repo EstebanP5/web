@@ -1,6 +1,6 @@
 <?php
 /*
-  Visor de videos de capacitación compartido para roles: admin, pm, responsable, empleado.
+    Visor de videos de capacitación compartido para roles: admin, pm, responsable, servicio_especializado, empleado.
   Funcionalidades clave:
   - Admin puede subir (URL o archivo) y borrar (borrado sólo vía módulo admin/videos.php).
   - Otros roles solo visualizan videos globales (proyecto_id = 0 o NULL) y los de sus proyectos asignados.
@@ -10,7 +10,7 @@
 require_once '../includes/db.php';
 session_start();
 
-if (!isset($_SESSION['user_id']) || !in_array($_SESSION['user_rol'], ['admin','pm','responsable','empleado'])) {
+if (!isset($_SESSION['user_id']) || !in_array($_SESSION['user_rol'], ['admin','pm','responsable','servicio_especializado','empleado'])) {
     header('Location: ../login.php');
     exit;
 }
@@ -78,7 +78,7 @@ if ($rol === 'admin') {
             while($row = $r->fetch_assoc()) { $proyectos_accesibles[(int)$row['id']] = $row['nombre']; }
         }
     }
-} else { // empleado, responsable
+} else { // empleado, responsable, servicio especializado
     if ($stmtP = $conn->prepare("SELECT g.id, g.nombre FROM empleado_proyecto ep JOIN grupos g ON g.id=ep.proyecto_id WHERE ep.empleado_id=? AND ep.activo=1 AND g.activo=1 ORDER BY g.nombre")) {
         // En este sistema se usa user_id directamente como empleado_id
         $stmtP->bind_param('i', $user_id);
@@ -744,8 +744,7 @@ $videos = $stmt->get_result();
                     $return_url = '';
                     if ($rol === 'admin') $return_url = '../admin/admin.php';
                     elseif ($rol === 'pm') $return_url = '../pm/dashboard.php';
-                    elseif ($rol === 'responsable') $return_url = '../responsable/dashboard.php';
-                    elseif ($rol === 'empleado') $return_url = '../responsable/dashboard.php';
+                    elseif (in_array($rol, ['responsable','servicio_especializado','empleado'], true)) $return_url = '../responsable/dashboard.php';
                     ?>
                     <a href="<?= $return_url ?>" class="back-button">
                         <i class="fas fa-arrow-left"></i>

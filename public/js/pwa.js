@@ -91,6 +91,28 @@
     }
   }
 
+  async function enqueueEntry(entry) {
+    const id = await addPending(entry);
+    log('Registro guardado offline', { id, url: entry.url, metodo: entry.method, tipo: entry.fields?.tipo_asistencia });
+    await updatePendingCount();
+
+    if ('serviceWorker' in navigator) {
+      const registration = await navigator.serviceWorker.ready;
+      if ('sync' in registration) {
+        try {
+          await registration.sync.register(SYNC_TAG);
+        } catch (error) {
+          console.warn('Background Sync no disponible, sincronizando manualmente.', error);
+          await syncPendingRequests();
+        }
+      } else {
+        await syncPendingRequests();
+      }
+    }
+
+    return id;
+  }
+
   async function queueSubmission(form) {
     const formData = new FormData(form);
     const fotoFile = formData.get('foto');
@@ -121,25 +143,38 @@
       }
     };
 
-    const id = await addPending(entry);
-    log('Registro guardado offline', { id, tipo: fields.tipo_asistencia, empleado: fields.empleado_nombre });
-    await updatePendingCount();
+    return enqueueEntry(entry);
+  }
 
-    if ('serviceWorker' in navigator) {
-      const registration = await navigator.serviceWorker.ready;
-      if ('sync' in registration) {
-        try {
-          await registration.sync.register(SYNC_TAG);
-        } catch (error) {
-          console.warn('Background Sync no disponible, sincronizando manualmente.', error);
-          await syncPendingRequests();
-        }
-      } else {
-        await syncPendingRequests();
-      }
+  async function queueSubmissionFromData({ url, method = 'POST', fields = {}, foto, filename, mimeType }) {
+    if (!url) {
+      throw new Error('URL requerida para almacenar la petición offline');
     }
 
-    return id;
+    const entry = {
+      url: new URL(url, window.location.href).toString(),
+      method: (method || 'POST').toUpperCase(),
+      createdAt: Date.now(),
+      fields: { ...fields }
+    };
+
+    if (foto instanceof Blob) {
+      const blob = foto;
+      const buffer = await blob.arrayBuffer();
+      entry.foto = {
+        buffer,
+        type: mimeType || blob.type || 'image/jpeg',
+        name: filename || blob.name || `offline-${Date.now()}.jpg`
+      };
+    } else if (foto && foto.buffer) {
+      entry.foto = {
+        buffer: foto.buffer,
+        type: foto.type || mimeType || 'image/jpeg',
+        name: foto.name || filename || `offline-${Date.now()}.jpg`
+      };
+    }
+
+    return enqueueEntry(entry);
   }
 
   async function syncPendingRequests() {
@@ -334,6 +369,7 @@
   window.asistenciaPWA = {
     init,
     queueSubmission,
+    queueSubmissionFromData,
     syncPendingRequests,
     onPendingChange(callback) {
       if (typeof callback === 'function') {

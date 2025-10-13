@@ -190,7 +190,7 @@ $quickWeek = ($fecha_inicio === $weekStart && $fecha_fin === $today);
 $quickMonth = ($fecha_inicio === $monthStart && $fecha_fin === $today);
 $soloSinSalidaActivo = ($solo_sin_salida === '1');
 
-$pageTitle = 'Gestión de Asistencias - Ergo PMS';
+$pageTitle = 'Gestión de Asistencias - ErgoCuida';
 $activePage = 'attendance';
 $pageHeading = 'Gestión de Asistencias';
 $pageDescription = 'Monitorea asistencia, descansos y ubicaciones con filtros inteligentes.';

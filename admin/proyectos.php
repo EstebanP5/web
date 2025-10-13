@@ -193,7 +193,7 @@ if ($busqueda !== '') {
     $activeFilters[] = 'Búsqueda: "' . htmlspecialchars($busqueda) . '"';
 }
 
-$pageTitle = 'Gestión de Proyectos - Ergo PMS';
+$pageTitle = 'Gestión de Proyectos - ErgoCuida';
 $activePage = 'projects';
 $pageHeading = 'Gestión de Proyectos';
 $pageDescription = 'Supervisa la cartera de proyectos, asignaciones y accesos de emergencia.';

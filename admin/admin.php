@@ -234,7 +234,7 @@ $stats = [
         ->fetch_assoc()['count']
 ];
 
-$pageTitle = 'Panel de Administración - Ergo PMS';
+$pageTitle = 'Panel de Administración - ErgoCuida';
 $activePage = 'dashboard';
 $pageHeading = 'Panel de Administración';
 $pageDescription = 'Visión general de proyectos, personal y asistencias clave.';

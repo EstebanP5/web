@@ -342,7 +342,7 @@ if ($busqueda !== '') {
     $activeFilters[] = 'Búsqueda: "' . htmlspecialchars($busqueda) . '"';
 }
 
-$pageTitle = 'Project Managers - Ergo PMS';
+$pageTitle = 'Project Managers - ErgoCuida';
 $activePage = 'pm';
 $pageHeading = 'Project Managers';
 $pageDescription = 'Administra credenciales, asignaciones y disponibilidad del equipo coordinador.';

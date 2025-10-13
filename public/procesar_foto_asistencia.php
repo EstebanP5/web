@@ -195,8 +195,13 @@ try {
     $mapa_ancho = 300;
     $mapa_alto = 200;
     
-    // URL del mapa usando nuestro StaticMapLite
-    $mapa_url = "http://localhost/web/staticmap.php?center={$lat},{$lng}&zoom={$zoom}&size={$mapa_ancho}x{$mapa_alto}&markers={$lat},{$lng},red&maptype=mapnik";
+    // URL del mapa usando nuestra instancia de StaticMapLite
+    $staticMapBase = getenv('STATICMAP_BASE_URL');
+    if ($staticMapBase === false || $staticMapBase === '') {
+        $staticMapBase = APP_URL;
+    }
+    $staticMapBase = rtrim($staticMapBase, '/');
+    $mapa_url = $staticMapBase . "/staticmap.php?center={$lat},{$lng}&zoom={$zoom}&size={$mapa_ancho}x{$mapa_alto}&markers={$lat},{$lng},red&maptype=mapnik";
     
     // Descargar el mapa (si falla, continuamos sin mapa)
     $imagen_mapa = null;
@@ -205,6 +210,10 @@ try {
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 15);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    if (stripos($mapa_url, 'https://') === 0) {
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+    }
     $mapa_data = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $curl_err = curl_error($ch);

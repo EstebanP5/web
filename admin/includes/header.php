@@ -31,7 +31,7 @@ function admin_is_active(string $slug, string $current): string {
                     <i class="fas fa-hard-hat"></i>
                 </div>
                 <div>
-                    <span class="admin-sidebar__title">Ergo PMS</span>
+                    <span class="admin-sidebar__title">ErgoCuida</span>
                     <span class="admin-sidebar__subtitle">Administración</span>
                 </div>
             </div>
