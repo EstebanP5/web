@@ -1,7 +1,6 @@
-
 <?php
 session_start();
-require_once '../includes/db.php';
+require_once __DIR__ . '/../includes/db.php';
 
 if (!function_exists('admin_fetch_all_assoc')) {
     function admin_fetch_all_assoc($result) {
