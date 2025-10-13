@@ -77,6 +77,37 @@ try {
     else if($tipo_l==='reanudar'){ $tipo_asistencia='Reanudar'; }
     else { $tipo_asistencia=ucfirst($tipo_l); }
     $motivo = trim($_POST['motivo'] ?? '');
+    $captured_at_raw = trim($_POST['captured_at'] ?? '');
+    $tzMx = new DateTimeZone('America/Mexico_City');
+    $fecha_hora_dt = null;
+
+    if ($captured_at_raw !== '') {
+        try {
+            $fecha_hora_dt = new DateTimeImmutable($captured_at_raw);
+        } catch (Exception $e) {
+            $fecha_hora_dt = null;
+        }
+
+        if ($fecha_hora_dt instanceof DateTimeImmutable) {
+            $fecha_hora_dt = $fecha_hora_dt->setTimezone($tzMx);
+        } else {
+            $captured_ts = strtotime($captured_at_raw);
+            if ($captured_ts !== false) {
+                $fecha_hora_dt = (new DateTimeImmutable('@' . $captured_ts))->setTimezone($tzMx);
+            }
+        }
+    }
+
+    if (!$fecha_hora_dt) {
+        $fecha_hora_dt = new DateTimeImmutable('now', $tzMx);
+    }
+
+    $now_tz = new DateTimeImmutable('now', $tzMx);
+    if ($fecha_hora_dt > $now_tz->modify('+10 minutes')) {
+        $fecha_hora_dt = $now_tz;
+    }
+
+    $fecha_hora = $fecha_hora_dt->format('Y-m-d H:i:s');
 
     $dedupeKey = null;
     $dedupeNow = time();
@@ -155,12 +186,12 @@ try {
     if (!is_dir($upload_dir)) { mkdir($upload_dir, 0755, true); }
 
     // Generar nombres únicos para archivos
-    $timestamp = time();
-    $fecha_hora = date('Y-m-d H:i:s');
-    $fecha_archivo = date('Y-m-d_H-i-s');
+    $timestamp = $fecha_hora_dt->getTimestamp();
+    $archivo_token = $fecha_hora_dt->format('Ymd_His');
+    $unico_suffix = substr(uniqid('', true), -6);
     
-    $nombre_original = "asistencia_original_{$servicio_especializado_id}_{$timestamp}.jpg";
-    $nombre_procesada = "asistencia_procesada_{$servicio_especializado_id}_{$timestamp}.jpg";
+    $nombre_original = "asistencia_original_{$servicio_especializado_id}_{$archivo_token}_{$unico_suffix}.jpg";
+    $nombre_procesada = "asistencia_procesada_{$servicio_especializado_id}_{$archivo_token}_{$unico_suffix}.jpg";
     $ruta_original = $upload_dir . $nombre_original;
     $ruta_procesada = $upload_dir . $nombre_procesada;
     $ruta_procesada_db = $db_rel_dir . $nombre_procesada;
@@ -271,7 +302,7 @@ try {
     $color_fondo = imagecolorallocatealpha($imagen_procesada, 0, 0, 0, 60);
     
     // Preparar textos
-    $texto_fecha = "Fecha: " . date('d/m/Y H:i:s');
+    $texto_fecha = "Fecha: " . $fecha_hora_dt->format('d/m/Y H:i:s');
     $texto_servicio_especializado = "Servicio Especializado: " . $servicio_especializado['nombre'];
     $texto_gps = "GPS: {$lat}, {$lng}";
     $texto_direccion = $direccion ? "Ubicación: " . substr($direccion, 0, 50) : "";

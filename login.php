@@ -746,7 +746,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <a href="https://www.instagram.com/" target="_blank" rel="noopener">
                 <i class="fab fa-instagram"></i>
             </a>
-            <span>ErgoCuida.mx</span>
+            <span>ErgoSolar.mx</span>
         </div>
     </div>
 

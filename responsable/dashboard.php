@@ -185,6 +185,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_asistencia']))
     $lat = isset($_POST['lat']) ? floatval($_POST['lat']) : 0;
     $lng = isset($_POST['lng']) ? floatval($_POST['lng']) : 0;
     $motivo = trim($_POST['motivo'] ?? '');
+    $fecha_captura_raw = trim($_POST['fecha_captura'] ?? '');
+    $tzMx = new DateTimeZone('America/Mexico_City');
+    $fecha_captura_dt = null;
+
+    if ($fecha_captura_raw !== '') {
+        try {
+            $fecha_captura_dt = new DateTimeImmutable($fecha_captura_raw);
+        } catch (Exception $e) {
+            $fecha_captura_dt = null;
+        }
+
+        if ($fecha_captura_dt instanceof DateTimeImmutable) {
+            $fecha_captura_dt = $fecha_captura_dt->setTimezone($tzMx);
+        } else {
+            $fecha_captura_ts = strtotime($fecha_captura_raw);
+            if ($fecha_captura_ts !== false) {
+                $fecha_captura_dt = (new DateTimeImmutable('@' . $fecha_captura_ts))->setTimezone($tzMx);
+            }
+        }
+    }
+
+    if (!$fecha_captura_dt) {
+        $fecha_captura_dt = new DateTimeImmutable('now', $tzMx);
+    }
+
+    $fecha_captura_str = $fecha_captura_dt->format('Y-m-d H:i:s');
+    $fecha_captura_fecha = $fecha_captura_dt->format('Y-m-d');
+    $dia_operativo = $fecha_captura_fecha;
 
     if ($proyecto_id && in_array($proyecto_id, array_column($proyectos, 'id'))) {
         if ($tipo === 'entrada') {
@@ -196,14 +224,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_asistencia']))
             } else {
             // Registrar entrada (si ya existe, actualizar la hora)
                 $stmt = $conn->prepare("INSERT INTO asistencia (empleado_id, proyecto_id, fecha, hora_entrada, lat_entrada, lon_entrada)
-                                        VALUES (?, ?, ?, NOW(), ?, ?)
-                                        ON DUPLICATE KEY UPDATE hora_entrada = IFNULL(hora_entrada, NOW()), lat_entrada = VALUES(lat_entrada), lon_entrada = VALUES(lon_entrada)");
-                $stmt->bind_param('iisdd', $user_id, $proyecto_id, $dia_operativo, $lat, $lng);
+                                        VALUES (?, ?, ?, ?, ?, ?)
+                                        ON DUPLICATE KEY UPDATE hora_entrada = IFNULL(hora_entrada, VALUES(hora_entrada)), lat_entrada = VALUES(lat_entrada), lon_entrada = VALUES(lon_entrada)");
+                $stmt->bind_param('iissdd', $user_id, $proyecto_id, $dia_operativo, $fecha_captura_str, $lat, $lng);
                 if ($stmt->execute()) { $mensaje_exito = '✅ Entrada registrada correctamente'; } else { $mensaje_error = '❌ Error al registrar entrada'; }
             }
         } elseif ($tipo === 'salida') {
-            $stmt = $conn->prepare("UPDATE asistencia SET hora_salida = NOW(), lat_salida = ?, lon_salida = ? WHERE empleado_id = ? AND proyecto_id = ? AND fecha = ?");
-            $stmt->bind_param('ddiis', $lat, $lng, $user_id, $proyecto_id, $dia_operativo);
+            $stmt = $conn->prepare("UPDATE asistencia SET hora_salida = ?, lat_salida = ?, lon_salida = ? WHERE empleado_id = ? AND proyecto_id = ? AND fecha = ?");
+            $stmt->bind_param('sddiis', $fecha_captura_str, $lat, $lng, $user_id, $proyecto_id, $dia_operativo);
             if ($stmt->execute() && $stmt->affected_rows > 0) { $mensaje_exito = '✅ Salida registrada correctamente'; } else { $mensaje_error = '❌ Error al registrar salida'; }
         } elseif ($tipo === 'descanso') {
             if ($motivo === '') { $mensaje_error = '❌ Indica el motivo del descanso.'; }
@@ -215,15 +243,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_asistencia']))
                 if ($existing_descanso && $existing_descanso['fin'] === null) {
                     $mensaje_exito = '⏸️ Descanso ya se encontraba activo.';
                 } else {
-                    $stmt = $conn->prepare("INSERT INTO descansos (empleado_id, proyecto_id, fecha, inicio, motivo) VALUES (?, ?, ?, NOW(), ?)" );
-                    $stmt->bind_param('iiss', $user_id, $proyecto_id, $dia_operativo, $motivo);
+                    $stmt = $conn->prepare("INSERT INTO descansos (empleado_id, proyecto_id, fecha, inicio, motivo) VALUES (?, ?, ?, ?, ?)" );
+                    $stmt->bind_param('iisss', $user_id, $proyecto_id, $dia_operativo, $fecha_captura_str, $motivo);
                     if ($stmt->execute()) { $mensaje_exito = '⏸️ Descanso iniciado'; } else { $mensaje_error = '❌ Error al iniciar descanso'; }
                 }
             }
         } elseif ($tipo === 'reanudar') {
             // Cerrar último descanso abierto
-            $stmt = $conn->prepare("UPDATE descansos SET fin = NOW() WHERE empleado_id = ? AND proyecto_id = ? AND fecha = ? AND fin IS NULL ORDER BY inicio DESC LIMIT 1");
-            $stmt->bind_param('iis', $user_id, $proyecto_id, $dia_operativo);
+            $stmt = $conn->prepare("UPDATE descansos SET fin = ? WHERE empleado_id = ? AND proyecto_id = ? AND fecha = ? AND fin IS NULL ORDER BY inicio DESC LIMIT 1");
+            $stmt->bind_param('siis', $fecha_captura_str, $user_id, $proyecto_id, $dia_operativo);
             if ($stmt->execute() && $stmt->affected_rows > 0) { $mensaje_exito = '▶️ Trabajo reanudado'; } else { $mensaje_error = '❌ No hay descanso activo'; }
         }
 
@@ -925,12 +953,14 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
       <input type="hidden" name="lat" id="lat"/>
       <input type="hidden" name="lng" id="lng"/>
       <input type="hidden" name="motivo" id="motivoInput"/>
+            <input type="hidden" name="fecha_captura" id="fechaCaptura"/>
     </form>
 
     <script src="../public/js/pwa.js"></script>
     <script>
     let stream=null, fotoBlob=null, accionActual=null; 
     let accionEnCurso=false, enviandoFoto=false;
+    let capturaTimestampISO = null;
     let availableCameras = [];
     let currentCameraIndex = 0;
     let currentDeviceId = null;
@@ -1176,12 +1206,15 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
                                 }
                             }
 
-        function capturarFoto(){
-          if(!stream) return;
-          const v=document.getElementById('video'); const c=document.getElementById('canvas'); const ctx=c.getContext('2d');
-          c.width=v.videoWidth; c.height=v.videoHeight; ctx.drawImage(v,0,0);
-          c.toBlob(b=>{ fotoBlob=b; document.getElementById('photo-preview').src=c.toDataURL('image/jpeg'); document.getElementById('photo-preview').style.display='block'; document.getElementById('btnEnviar').style.display='inline-block'; }, 'image/jpeg', 0.9);
-        }
+                function capturarFoto(){
+                    if(!stream) return;
+                    const v=document.getElementById('video'); const c=document.getElementById('canvas'); const ctx=c.getContext('2d');
+                    c.width=v.videoWidth; c.height=v.videoHeight; ctx.drawImage(v,0,0);
+                    capturaTimestampISO = new Date().toISOString();
+                    const fechaCapturaInput = document.getElementById('fechaCaptura');
+                    if(fechaCapturaInput){ fechaCapturaInput.value = capturaTimestampISO; }
+                    c.toBlob(b=>{ fotoBlob=b; document.getElementById('photo-preview').src=c.toDataURL('image/jpeg'); document.getElementById('photo-preview').style.display='block'; document.getElementById('btnEnviar').style.display='inline-block'; }, 'image/jpeg', 0.9);
+                }
 
                 function cerrarCamara(){
                     if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
@@ -1205,6 +1238,9 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
                         preview.style.display='none';
                         preview.removeAttribute('src');
                     }
+                                        capturaTimestampISO = null;
+                                        const fechaCapturaInput = document.getElementById('fechaCaptura');
+                                        if(fechaCapturaInput){ fechaCapturaInput.value=''; }
                 }
 
         async function enviarFoto(){
@@ -1215,6 +1251,12 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
                     if(btnEnviar){ btnEnviar.disabled = true; btnEnviar.textContent = 'Enviando…'; }
           const lat=document.getElementById('lat').value; const lng=document.getElementById('lng').value;
           const proyectoId = document.querySelector('input[name="proyecto_id"]').value;
+                                if(!capturaTimestampISO){
+                                    capturaTimestampISO = new Date().toISOString();
+                                }
+                                const captureIso = capturaTimestampISO;
+                                const fechaCapturaInput = document.getElementById('fechaCaptura');
+                                if(fechaCapturaInput){ fechaCapturaInput.value = captureIso; }
           // Opcional: obtener dirección
           let direccion='';
           try{
@@ -1235,6 +1277,7 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
           fd.append('tipo_asistencia', tipoFoto);
           fd.append('motivo', document.getElementById('motivoInput').value || '');
           fd.append('foto', fotoBlob, 'asistencia.jpg');
+          fd.append('captured_at', captureIso);
 
           try{
                         const res = await fetch('../public/procesar_foto_asistencia.php', { method:'POST', body: fd });
@@ -1255,7 +1298,8 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
                                         lng,
                                         direccion,
                                         tipo_asistencia: tipoFoto,
-                                        motivo: motivoValor
+                                        motivo: motivoValor,
+                                        captured_at: captureIso
                                     },
                                     foto: fotoBlob,
                                     filename: `asistencia-${userId}-${Date.now()}.jpg`
@@ -1269,7 +1313,8 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
                                         proyecto_id: proyectoId,
                                         lat,
                                         lng,
-                                        motivo: motivoValor
+                                        motivo: motivoValor,
+                                        fecha_captura: captureIso
                                     }
                                 });
 
@@ -1291,6 +1336,7 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
           // Registrar evento en BD de asistencia/descansos
           cerrarCamara();
           document.getElementById('accion_asistencia').value = accionActual;
+                      if(fechaCapturaInput){ fechaCapturaInput.value = captureIso; }
           document.getElementById('formAccion').submit();
         }
 
