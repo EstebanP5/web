@@ -125,6 +125,36 @@ if (!$empleado) {
     $stmt->execute();
     $empleado['puesto'] = 'Servicio Especializado';
 }
+
+// Asegurar tabla de documentos de empleados y obtener alta IMSS más reciente
+$conn->query("CREATE TABLE IF NOT EXISTS empleado_documentos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    empleado_id INT NOT NULL,
+    tipo VARCHAR(50) NOT NULL,
+    ruta_archivo VARCHAR(255) NOT NULL,
+    nombre_original VARCHAR(255) DEFAULT NULL,
+    mime_type VARCHAR(100) DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_empleado_tipo (empleado_id, tipo),
+    CONSTRAINT fk_empleado_documentos_empleado FOREIGN KEY (empleado_id) REFERENCES empleados(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+$alta_imss = null;
+$stmtAlta = $conn->prepare("SELECT ruta_archivo, nombre_original, created_at FROM empleado_documentos WHERE empleado_id = ? AND tipo = 'alta_imss' ORDER BY created_at DESC LIMIT 1");
+if ($stmtAlta) {
+    $stmtAlta->bind_param('i', $user_id);
+    if ($stmtAlta->execute()) {
+        $alta_imss = $stmtAlta->get_result()->fetch_assoc() ?: null;
+    }
+    $stmtAlta->close();
+}
+$alta_imss_fecha = null;
+if ($alta_imss && !empty($alta_imss['created_at'])) {
+    $tsAlta = strtotime($alta_imss['created_at']);
+    if ($tsAlta) {
+        $alta_imss_fecha = date('d/m/Y H:i', $tsAlta);
+    }
+}
 // Obtener proyectos asignados al Servicio Especializado
 // Obtener proyectos asignados al trabajador
 $proyectos_query = "
@@ -498,6 +528,16 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
             display: inline-flex;
             align-items: center;
             gap: 8px;
+        }
+
+        .btn-documento {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            color: #fff;
+            box-shadow: 0 12px 28px rgba(37, 99, 235, 0.22);
+        }
+
+        .btn-documento:hover {
+            background: linear-gradient(135deg, #1d4ed8, #1e40af);
         }
 
         .emergency-actions {
@@ -898,6 +938,28 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
                                 </div>
                             </div>
                         <?php endforeach; ?>
+                    </div>
+
+                    <div class="section" style="margin-bottom:20px;">
+                        <h3><i class="fas fa-file-medical"></i> Alta IMSS</h3>
+                        <?php if ($alta_imss && !empty($alta_imss['ruta_archivo'])): ?>
+                            <p style="color:#64748b; font-size:14px; margin:4px 0 12px;">
+                                Última actualización: <?= htmlspecialchars($alta_imss_fecha ?: 'Fecha no disponible'); ?>
+                                <?php if (!empty($alta_imss['nombre_original'])): ?>
+                                    · Documento: <?= htmlspecialchars($alta_imss['nombre_original']); ?>
+                                <?php endif; ?>
+                            </p>
+                            <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                                <a href="ver_alta_imss.php" class="btn btn-documento" target="_blank" rel="noopener">
+                                    <i class="fas fa-file-download"></i> Abrir documento
+                                </a>
+                                <a href="ver_alta_imss.php?download=1" class="btn btn-secondary" style="border-color:#2563eb; color:#1d4ed8;">
+                                    <i class="fas fa-cloud-download-alt"></i> Descargar copia
+                                </a>
+                            </div>
+                        <?php else: ?>
+                            <p style="color:#64748b; font-size:14px;">Aún no hay un documento de alta del IMSS disponible. Contacta al área administrativa para verificar tu registro.</p>
+                        <?php endif; ?>
                     </div>
                     
                     <div class="section" style="margin-bottom:20px;">

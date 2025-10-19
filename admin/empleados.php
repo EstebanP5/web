@@ -273,11 +273,24 @@ if ($resultProyectos) {
     }
 }
 
+$conn->query("CREATE TABLE IF NOT EXISTS empleado_documentos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    empleado_id INT NOT NULL,
+    tipo VARCHAR(50) NOT NULL,
+    ruta_archivo VARCHAR(255) NOT NULL,
+    nombre_original VARCHAR(255) DEFAULT NULL,
+    mime_type VARCHAR(100) DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_empleado_tipo (empleado_id, tipo),
+    CONSTRAINT fk_empleado_documentos_empleado FOREIGN KEY (empleado_id) REFERENCES empleados(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
 $empleados = [];
 $puestosDisponibles = [];
 $conteoProyectos = [];
 $conteoPuestos = [];
-$sql = "SELECT e.*, g.nombre AS proyecto_nombre, g.empresa AS proyecto_empresa, ep.proyecto_id, u.email, u.password_visible
+$sql = "SELECT e.*, g.nombre AS proyecto_nombre, g.empresa AS proyecto_empresa, ep.proyecto_id, u.email, u.password_visible,
+        EXISTS(SELECT 1 FROM empleado_documentos d WHERE d.empleado_id = e.id AND d.tipo = 'alta_imss') AS tiene_alta_imss
         FROM empleados e
         LEFT JOIN empleado_proyecto ep ON ep.empleado_id = e.id AND ep.activo = 1
         LEFT JOIN grupos g ON g.id = ep.proyecto_id
@@ -715,14 +728,12 @@ include __DIR__ . '/includes/header.php';
                             $estaActivo = (int)($empleado['activo'] ?? 0) === 1;
                             $estaBloqueado = (int)($empleado['bloqueado'] ?? 0) === 1;
                             $estadoLabel = $estaActivo ? 'status-activo' : 'status-inactivo';
+                            $tieneAltaImss = !empty($empleado['tiene_alta_imss']);
                         ?>
                         <tr data-search="<?php echo htmlspecialchars($searchIndex); ?>">
                             <td data-label="Servicio Especializado">
                                 <div class="table-entity">
                                     <strong><?php echo htmlspecialchars($empleado['nombre'] ?? ''); ?></strong>
-                                    <?php if (!empty($empleado['puesto'])): ?>
-                                        <span class="table-note"><?php echo htmlspecialchars($empleado['puesto']); ?></span>
-                                    <?php endif; ?>
                                 </div>
                             </td>
                             <td data-label="Contacto">
@@ -808,6 +819,11 @@ include __DIR__ . '/includes/header.php';
                                     <form method="POST" class="inline-form" onsubmit="return confirm('Esta acción eliminará al Servicio Especializado de forma permanente. ¿Continuar?');">
                                         <input type="hidden" name="accion" value="eliminar">
                                         <input type="hidden" name="empleado_id" value="<?php echo (int)$empleado['id']; ?>">
+                                        <?php if ($tieneAltaImss): ?>
+                                            <a href="ver_alta_imss.php?empleado_id=<?php echo (int)$empleado['id']; ?>" class="btn btn-secondary btn-compact" target="_blank" rel="noopener" title="Ver alta del IMSS">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                        <?php endif; ?>
                                         <button type="submit" class="btn btn-danger btn-compact">
                                             <i class="fas fa-trash"></i> Eliminar
                                         </button>

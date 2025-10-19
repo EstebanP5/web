@@ -25,9 +25,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($nombre === '' || $telefono === '' || $email === '' || $password === '') {
         $msg = 'Nombre, teléfono, correo y contraseña son obligatorios.';
     } else {
-        // 1) Crear usuario primero
-        $hash = password_hash($password, PASSWORD_BCRYPT);
-    $u = $conn->prepare("INSERT INTO users (name, email, password, rol, activo) VALUES (?, ?, ?, 'servicio_especializado', 1)");
+        $altaImssFile = $_FILES['alta_imss'] ?? null;
+        $altaImssInfo = null;
+    $allowedExtensions = ['pdf', 'jpg', 'jpeg', 'png'];
+    $allowedMimes = ['application/pdf', 'image/jpeg', 'image/png'];
+
+        if (!$altaImssFile || ($altaImssFile['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+            $msg = 'Debes adjuntar el alta del IMSS en formato PDF o imagen.';
+        } elseif (($altaImssFile['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+            $msg = 'No se pudo recibir el archivo del IMSS. Código de error: ' . (int)($altaImssFile['error']);
+        } elseif (($altaImssFile['size'] ?? 0) <= 0) {
+            $msg = 'El archivo del IMSS está vacío. Verifica la selección e inténtalo nuevamente.';
+        } else {
+            $extension = strtolower(pathinfo($altaImssFile['name'] ?? '', PATHINFO_EXTENSION));
+            if (!in_array($extension, $allowedExtensions, true)) {
+                $msg = 'Formato de archivo no permitido. Sube un PDF, JPG o PNG.';
+            } elseif (($altaImssFile['size'] ?? 0) > 10 * 1024 * 1024) {
+                $msg = 'El archivo del IMSS no debe superar los 10MB.';
+            } else {
+                $detectedMime = null;
+                if (function_exists('finfo_open')) {
+                    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                    if ($finfo) {
+                        $detectedMime = finfo_file($finfo, $altaImssFile['tmp_name']);
+                        finfo_close($finfo);
+                    }
+                }
+                if ($detectedMime && !in_array($detectedMime, $allowedMimes, true)) {
+                    $msg = 'El archivo del IMSS debe ser PDF o imagen (JPG/PNG).';
+                } else {
+                    $altaImssInfo = [
+                        'extension' => $extension,
+                        'mime' => $detectedMime ?: ($altaImssFile['type'] ?? ''),
+                        'original' => $altaImssFile['name'] ?? 'alta_imss',
+                        'tmp_name' => $altaImssFile['tmp_name']
+                    ];
+                }
+            }
+        }
+
+        if ($msg === '') {
+            // 1) Crear usuario primero
+            $hash = password_hash($password, PASSWORD_BCRYPT);
+            $u = $conn->prepare("INSERT INTO users (name, email, password, rol, activo) VALUES (?, ?, ?, 'servicio_especializado', 1)");
         if (!$u) {
             $msg = 'Error interno preparando inserción de usuario.';
         } else {
@@ -56,7 +96,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $stmt4->execute();
                             }
                         }
-                        $msg = 'Empleado creado y credenciales registradas.';
+                        // Manejar documento de alta IMSS
+                        $docOk = false;
+                        $docMessage = '';
+                        $destPath = null;
+                        if ($altaImssInfo) {
+                            $uploadsDir = dirname(__DIR__) . '/uploads/altas_imss';
+                            if (!is_dir($uploadsDir)) {
+                                if (!mkdir($uploadsDir, 0775, true) && !is_dir($uploadsDir)) {
+                                    $docMessage = 'No se pudo crear el directorio para guardar el alta del IMSS.';
+                                }
+                            }
+
+                            if ($docMessage === '') {
+                                try {
+                                    $randomSegment = bin2hex(random_bytes(4));
+                                } catch (Exception $e) {
+                                    if (function_exists('openssl_random_pseudo_bytes')) {
+                                        $fallback = openssl_random_pseudo_bytes(4);
+                                        $randomSegment = $fallback !== false ? bin2hex($fallback) : substr(sha1(uniqid('', true)), 0, 8);
+                                    } else {
+                                        $randomSegment = substr(sha1(uniqid('', true)), 0, 8);
+                                    }
+                                }
+                                $filename = 'alta_imss_' . $empleadoId . '_' . date('Ymd_His') . '_' . $randomSegment . '.' . $altaImssInfo['extension'];
+                                $destPath = $uploadsDir . DIRECTORY_SEPARATOR . $filename;
+                                if (!is_uploaded_file($altaImssInfo['tmp_name']) || !move_uploaded_file($altaImssInfo['tmp_name'], $destPath)) {
+                                    $docMessage = 'No se pudo guardar el archivo del IMSS en el servidor.';
+                                } else {
+                                    $relativePath = 'uploads/altas_imss/' . $filename;
+                                    $createTableSql = "CREATE TABLE IF NOT EXISTS empleado_documentos (
+                                        id INT AUTO_INCREMENT PRIMARY KEY,
+                                        empleado_id INT NOT NULL,
+                                        tipo VARCHAR(50) NOT NULL,
+                                        ruta_archivo VARCHAR(255) NOT NULL,
+                                        nombre_original VARCHAR(255) DEFAULT NULL,
+                                        mime_type VARCHAR(100) DEFAULT NULL,
+                                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                        INDEX idx_empleado_tipo (empleado_id, tipo),
+                                        CONSTRAINT fk_empleado_documentos_empleado FOREIGN KEY (empleado_id) REFERENCES empleados(id) ON DELETE CASCADE
+                                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+                                    if (!$conn->query($createTableSql)) {
+                                        $docMessage = 'No se pudo preparar el registro del alta del IMSS.';
+                                    } else {
+                                        $docStmt = $conn->prepare("INSERT INTO empleado_documentos (empleado_id, tipo, ruta_archivo, nombre_original, mime_type, created_at) VALUES (?, 'alta_imss', ?, ?, ?, NOW())");
+                                        if ($docStmt) {
+                                            $docStmt->bind_param('isss', $empleadoId, $relativePath, $altaImssInfo['original'], $altaImssInfo['mime']);
+                                            if ($docStmt->execute()) {
+                                                $docOk = true;
+                                            } else {
+                                                $docMessage = 'No se pudo registrar el alta del IMSS en la base de datos.';
+                                            }
+                                            $docStmt->close();
+                                        } else {
+                                            $docMessage = 'No se pudo preparar la inserción del alta del IMSS.';
+                                        }
+
+                                        if (!$docOk && $destPath && file_exists($destPath)) {
+                                            unlink($destPath);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (!$docOk) {
+                            if ($destPath && file_exists($destPath)) {
+                                unlink($destPath);
+                            }
+                            $conn->query("DELETE FROM empleado_proyecto WHERE empleado_id = " . (int)$empleadoId);
+                            $conn->query("DELETE FROM empleados WHERE id = " . (int)$empleadoId);
+                            $conn->query("DELETE FROM users WHERE id = " . (int)$empleadoId);
+                            $msg = $docMessage !== '' ? $docMessage : 'Ocurrió un problema al guardar el alta del IMSS. Intenta nuevamente.';
+                        } else {
+                            $msg = 'Empleado creado, credenciales registradas y alta IMSS guardada.';
+                        }
                     } else {
                         // rollback usuario si falla empleado
                         $conn->query("DELETE FROM users WHERE id = " . (int)$userId);
@@ -69,6 +183,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $msg = 'Correo en uso o error al crear usuario.';
             }
+        }
         }
     }
 }
@@ -255,6 +370,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             background: white;
             transition: all 0.2s ease;
             outline: none;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+        }
+
+        .file-input-wrapper input[type="file"] {
+            width: 100%;
+            padding: 18px;
+            border: 2px dashed #cbd5e1;
+            border-radius: 12px;
+            background: #f8fafc;
+            color: #1a365d;
+            cursor: pointer;
+            transition: border-color 0.2s ease, background 0.2s ease;
+        }
+
+        .file-input-wrapper input[type="file"]:hover {
+            border-color: #ff7a00;
+            background: #fff7ed;
+        }
+
+        .file-input-wrapper input[type="file"]:focus {
+            outline: none;
+            border-color: #ff7a00;
+            box-shadow: 0 0 0 3px rgba(255, 122, 0, 0.1);
+            background: #ffffff;
         }
         
         input:focus,
@@ -526,13 +668,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </h3>
                 <ul>
                     <li>Los campos marcados con (*) son obligatorios</li>
+                    <li>Debes adjuntar el documento de alta del IMSS en PDF o imagen (JPG/PNG)</li>
                     <li>Se crearán credenciales de acceso automáticamente</li>
                     <li>El empleado podrá iniciar sesión con su email y contraseña</li>
                     <li>La asignación de proyecto es opcional y puede cambiarse después</li>
                 </ul>
             </div>
             
-            <form method="post" id="employeeForm">
+            <form method="post" id="employeeForm" enctype="multipart/form-data">
                 <div class="section">
                     <div class="section-title">
                         <i class="fas fa-user"></i>
@@ -559,14 +702,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="form-help">Formato: XXX XXX XXXX</div>
                         </div>
                         
-                        <div class="form-group">
-                            <label>Puesto de trabajo</label>
-                            <div class="input-wrapper">
-                                <i class="fas fa-briefcase"></i>
-                                   <input type="text" id="puesto" value="Servicio Especializado" readonly class="form-control" style="background:#f8fafc;">
-                                   <input type="hidden" name="puesto" value="Servicio Especializado">
-                            </div>
-                        </div>
                     </div>
                 </div>
                 
@@ -595,6 +730,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                        value="<?php echo isset($_POST['curp']) ? htmlspecialchars($_POST['curp']) : ''; ?>">
                             </div>
                             <div class="form-help">18 caracteres alfanuméricos</div>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label class="required">Alta IMSS (PDF o imagen)</label>
+                            <div class="file-input-wrapper">
+                                <input type="file" name="alta_imss" id="altaImssInput" required accept=".pdf,image/*">
+                            </div>
+                            <div class="form-help" id="altaImssHelp">Adjunta el comprobante oficial de alta ante el IMSS. Peso máximo 10MB.</div>
                         </div>
                     </div>
                 </div>
@@ -683,6 +826,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         // Reset password strength
                         const bars = document.querySelectorAll('.strength-bar');
                         bars.forEach(bar => bar.style.background = '#e5e7eb');
+                        const altaHelp = document.getElementById('altaImssHelp');
+                        if (altaHelp) {
+                            altaHelp.textContent = 'Adjunta el comprobante oficial de alta ante el IMSS. Peso máximo 10MB.';
+                        }
                     }, 2000);
                 }
             }
@@ -758,6 +905,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             e.target.value = value;
         });
+
+        const altaImssInput = document.getElementById('altaImssInput');
+        const altaImssHelp = document.getElementById('altaImssHelp');
+        if (altaImssInput && altaImssHelp) {
+            const defaultHelp = altaImssHelp.textContent;
+            altaImssInput.addEventListener('change', function() {
+                if (this.files && this.files.length > 0) {
+                    const file = this.files[0];
+                    const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+                    altaImssHelp.textContent = `Archivo seleccionado: ${file.name} (${sizeMb} MB)`;
+                } else {
+                    altaImssHelp.textContent = defaultHelp;
+                }
+            });
+        }
         
         // CURP formatting
         document.querySelector('input[name="curp"]').addEventListener('input', function(e) {

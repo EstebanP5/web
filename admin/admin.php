@@ -178,18 +178,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // CREAR SERVICIO ESPECIALIZADO
     if (isset($_POST['crear_empleado'])) {
-        // CREAR Servicio Especializado
-        // CREAR EMPLEADO
-        $nombre = trim($_POST['nombre']);
-        $telefono = trim($_POST['telefono']);
-        $nss = trim($_POST['nss']);
-        $curp = trim($_POST['curp']);
-    $puesto = 'Servicio Especializado';
-        $salario = floatval($_POST['salario']);
+        $nombre = trim($_POST['nombre'] ?? '');
+        $telefono = trim($_POST['telefono'] ?? '');
+        $nss = trim($_POST['nss'] ?? '');
+        $curp = trim($_POST['curp'] ?? '');
+        $puesto = 'Servicio Especializado';
+        $salario = isset($_POST['salario']) ? floatval($_POST['salario']) : 0;
         $email = trim($_POST['email'] ?? '');
         $password = trim($_POST['password'] ?? '');
 
-        if ($nombre && $telefono && $email && $password) {
+        $altaImssFile = $_FILES['alta_imss'] ?? null;
+        $allowedExtensions = ['pdf', 'jpg', 'jpeg', 'png'];
+        $allowedMimes = ['application/pdf', 'image/jpeg', 'image/png'];
+        $archivoValido = false;
+        $docInfo = null;
+        $docError = '';
+
+        if (!$nombre || !$telefono || !$email || !$password) {
+            $mensaje_error = '❌ Nombre, teléfono, correo, contraseña y alta IMSS son obligatorios.';
+        } elseif (!$altaImssFile || ($altaImssFile['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+            $mensaje_error = '❌ Debes adjuntar el alta del IMSS en formato PDF o imagen.';
+        } elseif (($altaImssFile['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+            $mensaje_error = '❌ No se pudo recibir el archivo del IMSS (código ' . (int)$altaImssFile['error'] . ').';
+        } elseif (($altaImssFile['size'] ?? 0) <= 0) {
+            $mensaje_error = '❌ El archivo del IMSS está vacío. Verifica la selección.';
+        } else {
+            $extension = strtolower(pathinfo($altaImssFile['name'] ?? '', PATHINFO_EXTENSION));
+            if (!in_array($extension, $allowedExtensions, true)) {
+                $mensaje_error = '❌ Formato de archivo no permitido. Sube un PDF, JPG o PNG.';
+            } elseif (($altaImssFile['size'] ?? 0) > 10 * 1024 * 1024) {
+                $mensaje_error = '❌ El archivo del IMSS no debe superar los 10MB.';
+            } else {
+                $detectedMime = null;
+                if (function_exists('finfo_open')) {
+                    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                    if ($finfo) {
+                        $detectedMime = finfo_file($finfo, $altaImssFile['tmp_name']);
+                        finfo_close($finfo);
+                    }
+                }
+                if ($detectedMime && !in_array($detectedMime, $allowedMimes, true)) {
+                    $mensaje_error = '❌ El archivo del IMSS debe ser PDF o imagen (JPG/PNG).';
+                } else {
+                    $archivoValido = true;
+                    $docInfo = [
+                        'extension' => $extension,
+                        'mime' => $detectedMime ?: ($altaImssFile['type'] ?? ''),
+                        'original' => $altaImssFile['name'] ?? 'alta_imss',
+                        'tmp_name' => $altaImssFile['tmp_name']
+                    ];
+                }
+            }
+        }
+
+        if (empty($mensaje_error) && $archivoValido && $docInfo) {
             $hash = password_hash($password, PASSWORD_BCRYPT);
             $u = $conn->prepare("INSERT INTO users (name, email, password, rol, activo) VALUES (?, ?, ?, 'servicio_especializado', 1)");
             if (!$u) {
@@ -202,7 +244,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($stmt) {
                         $stmt->bind_param('isssss', $userId, $nombre, $telefono, $nss, $curp, $puesto);
                         if ($stmt->execute()) {
-                            $mensaje_exito = "✅ Empleado '" . htmlspecialchars($nombre) . "' creado y credenciales registradas.";
+                            $conn->query("CREATE TABLE IF NOT EXISTS empleado_documentos (
+                                id INT AUTO_INCREMENT PRIMARY KEY,
+                                empleado_id INT NOT NULL,
+                                tipo VARCHAR(50) NOT NULL,
+                                ruta_archivo VARCHAR(255) NOT NULL,
+                                nombre_original VARCHAR(255) DEFAULT NULL,
+                                mime_type VARCHAR(100) DEFAULT NULL,
+                                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                INDEX idx_empleado_tipo (empleado_id, tipo),
+                                CONSTRAINT fk_empleado_documentos_empleado FOREIGN KEY (empleado_id) REFERENCES empleados(id) ON DELETE CASCADE
+                            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+                            $uploadsDir = dirname(__DIR__) . '/uploads/altas_imss';
+                            if (!is_dir($uploadsDir) && !mkdir($uploadsDir, 0775, true) && !is_dir($uploadsDir)) {
+                                $docError = 'No se pudo crear el directorio para guardar el alta del IMSS.';
+                            } else {
+                                try {
+                                    $randomSegment = bin2hex(random_bytes(4));
+                                } catch (Exception $e) {
+                                    if (function_exists('openssl_random_pseudo_bytes')) {
+                                        $fallback = openssl_random_pseudo_bytes(4);
+                                        $randomSegment = $fallback !== false ? bin2hex($fallback) : substr(sha1(uniqid('', true)), 0, 8);
+                                    } else {
+                                        $randomSegment = substr(sha1(uniqid('', true)), 0, 8);
+                                    }
+                                }
+
+                                $filename = 'alta_imss_' . $userId . '_' . date('Ymd_His') . '_' . $randomSegment . '.' . $docInfo['extension'];
+                                $destPath = $uploadsDir . DIRECTORY_SEPARATOR . $filename;
+
+                                if (!is_uploaded_file($docInfo['tmp_name']) || !move_uploaded_file($docInfo['tmp_name'], $destPath)) {
+                                    $docError = 'No se pudo guardar el archivo del IMSS en el servidor.';
+                                } else {
+                                    $relativePath = 'uploads/altas_imss/' . $filename;
+                                    $docStmt = $conn->prepare('INSERT INTO empleado_documentos (empleado_id, tipo, ruta_archivo, nombre_original, mime_type, created_at) VALUES (?, \'alta_imss\', ?, ?, ?, NOW())');
+                                    if ($docStmt) {
+                                        $docStmt->bind_param('isss', $userId, $relativePath, $docInfo['original'], $docInfo['mime']);
+                                        if ($docStmt->execute()) {
+                                            $mensaje_exito = "✅ Servicio Especializado '" . htmlspecialchars($nombre) . "' creado y alta IMSS registrada.";
+                                        } else {
+                                            $docError = 'No se pudo registrar el alta del IMSS en la base de datos.';
+                                        }
+                                        $docStmt->close();
+                                    } else {
+                                        $docError = 'No se pudo preparar la inserción del alta del IMSS.';
+                                    }
+
+                                    if (!empty($docError) && file_exists($destPath)) {
+                                        unlink($destPath);
+                                    }
+                                }
+                            }
+
+                            if (!empty($docError)) {
+                                $conn->query('DELETE FROM empleado_documentos WHERE empleado_id = ' . (int)$userId);
+                                $conn->query('DELETE FROM empleados WHERE id = ' . (int)$userId);
+                                $conn->query('DELETE FROM users WHERE id = ' . (int)$userId);
+                                $mensaje_error = '❌ ' . $docError;
+                                $mensaje_exito = '';
+                            }
                         } else {
                             $conn->query('DELETE FROM users WHERE id = ' . $userId);
                             $mensaje_error = '❌ Error al crear empleado (FK).';
@@ -215,8 +316,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $mensaje_error = '❌ Correo en uso o error al crear usuario.';
                 }
             }
-        } else {
-            $mensaje_error = '❌ Nombre, teléfono, correo y contraseña son obligatorios.';
         }
     }
 }
@@ -603,7 +702,7 @@ include __DIR__ . '/includes/header.php';
             <h3>Crear Nuevo Servicio Especializado</h3>
             <button class="close-btn" type="button" onclick="closeModal('empleadoModal')">&times;</button>
         </div>
-        <form method="POST" id="empleadoForm">
+        <form method="POST" id="empleadoForm" enctype="multipart/form-data">
             <input type="hidden" name="crear_empleado" value="1">
 
             <div class="form-grid">
@@ -624,7 +723,7 @@ include __DIR__ . '/includes/header.php';
                 </div>
                 <div class="form-group">
                     <label>Contraseña *</label>
-                    <input type="password" name="password" class="form-control" required placeholder="Mínimo 6 caracteres">
+                    <input type="password" name="password" class="form-control" required placeholder="Mínimo 8 caracteres" minlength="8">
                 </div>
             </div>
 
@@ -640,14 +739,10 @@ include __DIR__ . '/includes/header.php';
             </div>
 
             <div class="form-grid">
-                <div class="form-group">
-                    <label>Puesto</label>
-                    <input type="text" id="puesto" class="form-control" value="Servicio Especializado" readonly style="background:#f8fafc;">
-                    <input type="hidden" name="puesto" value="Servicio Especializado">
-                </div>
-                <div class="form-group is-hidden">
-                    <label>Salario</label>
-                    <input type="number" step="0.01" name="salario" class="form-control" placeholder="0.00">
+                <div class="form-group full-width">
+                    <label>Alta IMSS (PDF o imagen) *</label>
+                    <input type="file" name="alta_imss" class="form-control" required accept=".pdf,image/*">
+                    <small class="text-muted">Adjunta el comprobante oficial del alta. Tamaño máximo 10MB.</small>
                 </div>
             </div>
 
