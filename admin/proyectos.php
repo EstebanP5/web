@@ -77,7 +77,7 @@ $sql = "SELECT g.*,
               FROM proyectos_pm pm 
               JOIN users u ON u.id = pm.user_id 
              WHERE pm.proyecto_id = g.id AND pm.activo = 1) AS pm_nombres,
-           (SELECT COUNT(*) FROM empleado_proyecto ep WHERE ep.proyecto_id = g.id AND ep.activo = 1) AS total_personal
+           (SELECT COUNT(DISTINCT ep.empleado_id) FROM empleado_proyecto ep WHERE ep.proyecto_id = g.id AND ep.activo = 1) AS total_personal
         FROM grupos g
         ORDER BY g.nombre";
 $result = $conn->query($sql);

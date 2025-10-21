@@ -453,6 +453,9 @@ body {
             <p>Gestiona y supervisa todos tus proyectos asignados</p>
         </div>
         <div class="header-actions">
+            <a href="forms/crear_proyecto.php" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Nuevo Proyecto
+            </a>
             <div class="search-box">
                 <i class="fas fa-search"></i>
                 <input type="text" id="searchInput" placeholder="Buscar proyectos..." value="<?= htmlspecialchars($search) ?>">
@@ -493,7 +496,7 @@ body {
     <div class="empty-state">
         <i class="fas fa-project-diagram"></i>
         <h3>No tienes proyectos asignados</h3>
-        <p>Contacta al administrador para que te asigne proyectos</p>
+        <p>Crea tu primer proyecto con el botón "Nuevo Proyecto" o solicita acceso al administrador.</p>
     </div>
     <?php else: ?>
     
@@ -570,6 +573,9 @@ body {
                         <a href="empleados.php?proyecto=<?= $p['id'] ?>" class="btn btn-secondary">
                             <i class="fas fa-users"></i> Equipo
                         </a>
+                        <a href="proyecto_equipo.php?id=<?= $p['id'] ?>" class="btn btn-success">
+                            <i class="fas fa-user-cog"></i> Gestionar
+                        </a>
                         <a href="fotos_asistencia.php?proyecto=<?= $p['id'] ?>" class="btn btn-secondary">
                             <i class="fas fa-camera"></i> Fotos
                         </a>
@@ -599,6 +605,9 @@ body {
                         </a>
                         <a href="empleados.php?proyecto=<?= $p['id'] ?>" class="btn btn-secondary">
                             <i class="fas fa-users"></i>
+                        </a>
+                        <a href="proyecto_equipo.php?id=<?= $p['id'] ?>" class="btn btn-success" title="Gestionar equipo">
+                            <i class="fas fa-user-cog"></i>
                         </a>
                         <?php if($p['lat'] && $p['lng']): ?>
                         <a href="https://maps.google.com/?q=<?= $p['lat'] ?>,<?= $p['lng'] ?>" target="_blank" class="btn btn-warning">

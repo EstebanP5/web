@@ -2,6 +2,23 @@
 // Componente de navegación unificada para PM
 $current_page = basename($_SERVER['PHP_SELF'], '.php');
 $user_name = $_SESSION['user_name'] ?? '';
+
+$scriptDir = str_replace('\\', '/', dirname($_SERVER['PHP_SELF'] ?? ''));
+$pmBaseUri = rtrim($scriptDir, '/');
+if ($pmBaseUri === '') {
+    $pmBaseUri = '/';
+}
+$pmBaseUri = preg_replace('#/forms$#', '', $pmBaseUri);
+
+if (!function_exists('pm_nav_path')) {
+    function pm_nav_path(string $baseUri, string $path): string
+    {
+        if ($baseUri === '' || $baseUri === '/') {
+            return '/' . ltrim($path, '/');
+        }
+        return rtrim($baseUri, '/') . '/' . ltrim($path, '/');
+    }
+}
 ?>
 
 <nav class="pm-navigation">
@@ -12,23 +29,23 @@ $user_name = $_SESSION['user_name'] ?? '';
         </div>
         
         <div class="nav-menu">
-            <a href="dashboard.php" class="nav-item <?= $current_page === 'dashboard' ? 'active' : '' ?>">
+            <a href="<?= htmlspecialchars(pm_nav_path($pmBaseUri, 'dashboard.php')) ?>" class="nav-item <?= $current_page === 'dashboard' ? 'active' : '' ?>">
                 <i class="fas fa-tachometer-alt"></i>
                 <span>Dashboard</span>
             </a>
-            <a href="proyectos.php" class="nav-item <?= $current_page === 'proyectos' ? 'active' : '' ?>">
+            <a href="<?= htmlspecialchars(pm_nav_path($pmBaseUri, 'proyectos.php')) ?>" class="nav-item <?= $current_page === 'proyectos' ? 'active' : '' ?>">
                 <i class="fas fa-project-diagram"></i>
                 <span>Proyectos</span>
             </a>
-            <a href="empleados.php" class="nav-item <?= $current_page === 'empleados' ? 'active' : '' ?>">
+            <a href="<?= htmlspecialchars(pm_nav_path($pmBaseUri, 'empleados.php')) ?>" class="nav-item <?= $current_page === 'empleados' ? 'active' : '' ?>">
                 <i class="fas fa-users"></i>
                 <span>Servicios Especializados</span>
             </a>
-            <a href="asistencias.php" class="nav-item <?= $current_page === 'asistencias' ? 'active' : '' ?>">
+            <a href="<?= htmlspecialchars(pm_nav_path($pmBaseUri, 'asistencias.php')) ?>" class="nav-item <?= $current_page === 'asistencias' ? 'active' : '' ?>">
                 <i class="fas fa-calendar-check"></i>
                 <span>Asistencias</span>
             </a>
-            <a href="fotos_asistencia.php" class="nav-item <?= $current_page === 'fotos_asistencia' ? 'active' : '' ?>">
+            <a href="<?= htmlspecialchars(pm_nav_path($pmBaseUri, 'fotos_asistencia.php')) ?>" class="nav-item <?= $current_page === 'fotos_asistencia' ? 'active' : '' ?>">
                 <i class="fas fa-camera"></i>
                 <span>Fotos</span>
             </a>
@@ -43,7 +60,7 @@ $user_name = $_SESSION['user_name'] ?? '';
                 <div class="user-name"><?= htmlspecialchars(explode(' ', $user_name)[0]) ?></div>
                 <div class="user-role">PM</div>
             </div>
-            <a href="../logout.php" class="nav-logout">
+            <a href="<?= htmlspecialchars(pm_nav_path($pmBaseUri, '../logout.php')) ?>" class="nav-logout">
                 <i class="fas fa-sign-out-alt"></i>
             </a>
         </div>

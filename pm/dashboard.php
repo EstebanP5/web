@@ -306,7 +306,9 @@ $pmCssVersion = file_exists($pmCssPath) ? filemtime($pmCssPath) : time();
             </div>
         </div>
         <div class="pm-header__actions">
-            <a href="asistencias.php" class="btn btn-primary"><i class="fas fa-calendar-check"></i> Revisar asistencias</a>
+            <a href="forms/crear_proyecto.php" class="btn btn-primary"><i class="fas fa-plus"></i> Nuevo proyecto</a>
+            <a href="forms/crear_servicio.php" class="btn btn-ghost"><i class="fas fa-user-plus"></i> Nuevo Servicio</a>
+            <a href="asistencias.php" class="btn btn-ghost"><i class="fas fa-calendar-check"></i> Revisar asistencias</a>
             <a href="fotos_asistencia.php" class="btn btn-ghost"><i class="fas fa-camera"></i> Fotos</a>
             <a href="empleados.php" class="btn btn-ghost"><i class="fas fa-users"></i> Servicios Especializados</a>
         </div>

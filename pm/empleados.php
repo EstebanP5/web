@@ -79,6 +79,30 @@ body {
     padding: 32px 24px;
 }
 
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  color: #ffffff;
+  box-shadow: 0 10px 25px rgba(59, 130, 246, 0.25);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 32px rgba(37, 99, 235, 0.35);
+}
+
 .page-header {
     display: flex;
     justify-content: space-between;
@@ -86,6 +110,13 @@ body {
     margin-bottom: 32px;
     flex-wrap: wrap;
     gap: 24px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .header-content h1 {
@@ -346,6 +377,9 @@ tr:hover {
     <div class="header-content">
   <h1><i class="fas fa-users"></i> Servicios Especializados<?php if($proyecto_id){ foreach($proyectos as $p){ if($p['id']==$proyecto_id){ echo ' - '.htmlspecialchars($p['nombre']); break; } } } ?></h1>
   <p>Gestiona y supervisa a tus Servicios Especializados activos</p>
+    </div>
+    <div class="header-actions">
+      <a href="forms/crear_servicio.php" class="btn btn-primary"><i class="fas fa-user-plus"></i> Nuevo Servicio</a>
     </div>
   </div>
 

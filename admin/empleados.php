@@ -38,62 +38,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $curp = trim($_POST['curp'] ?? '');
     $email = trim($_POST['email'] ?? '');
     $password = trim($_POST['password'] ?? '');
-    $proyectoId = isset($_POST['proyecto_id']) ? (int)$_POST['proyecto_id'] : 0;
 
     switch ($accion) {
-        case 'asignar':
-            if ($empleadoId <= 0) {
-                $_SESSION['flash_error'] = 'Servicio Especializado no válido para asignación.';
-                admin_servicios_especializados_redirect();
-            }
-
-            $activoEmpleado = 0;
-            $bloqueadoEmpleado = 0;
-            if ($stmtEstado = $conn->prepare('SELECT activo, COALESCE(bloqueado, 0) AS bloqueado FROM empleados WHERE id = ? LIMIT 1')) {
-                $stmtEstado->bind_param('i', $empleadoId);
-                if ($stmtEstado->execute()) {
-                    $stmtEstado->bind_result($activoEmpleado, $bloqueadoEmpleado);
-                    $stmtEstado->fetch();
-                }
-                $stmtEstado->close();
-            }
-
-            $estaActivo = (int)$activoEmpleado === 1;
-            $estaBloqueado = (int)$bloqueadoEmpleado === 1;
-            if (!$estaActivo || $estaBloqueado) {
-                $_SESSION['flash_error'] = 'No puedes asignar proyectos a un Servicio Especializado dado de baja o bloqueado.';
-                admin_servicios_especializados_redirect();
-            }
-
-            if ($stmt = $conn->prepare("UPDATE empleado_proyecto SET activo = 0 WHERE empleado_id = ? AND activo = 1")) {
-                $stmt->bind_param('i', $empleadoId);
-                $stmt->execute();
-                $stmt->close();
-            }
-
-            if ($proyectoId > 0) {
-                $updated = 0;
-                if ($stmt = $conn->prepare("UPDATE empleado_proyecto SET activo = 1, fecha_asignacion = NOW() WHERE empleado_id = ? AND proyecto_id = ?")) {
-                    $stmt->bind_param('ii', $empleadoId, $proyectoId);
-                    $stmt->execute();
-                    $updated = $stmt->affected_rows;
-                    $stmt->close();
-                }
-                if ($updated === 0) {
-                    if ($stmt = $conn->prepare("INSERT INTO empleado_proyecto (empleado_id, proyecto_id, activo, fecha_asignacion) VALUES (?, ?, 1, NOW())")) {
-                        $stmt->bind_param('ii', $empleadoId, $proyectoId);
-                        $stmt->execute();
-                        $stmt->close();
-                    }
-                }
-                $_SESSION['flash_success'] = 'Asignación actualizada correctamente.';
-            } else {
-                $_SESSION['flash_success'] = 'Asignaciones activas removidas.';
-            }
-
-            admin_servicios_especializados_redirect();
-            break;
-
         case 'editar':
             if ($empleadoId <= 0 || $nombre === '') {
                 $_SESSION['flash_error'] = 'Datos incompletos para actualizar al Servicio Especializado.';
@@ -173,10 +119,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $activo = $accion === 'alta' ? 1 : 0;
 
-            if ($stmt = $conn->prepare('UPDATE empleados SET activo = ? WHERE id = ?')) {
-                $stmt->bind_param('ii', $activo, $empleadoId);
-                $stmt->execute();
-                $stmt->close();
+            if ($stmtEmpleado = $conn->prepare('UPDATE empleados SET activo = ? WHERE id = ?')) {
+                $stmtEmpleado->bind_param('ii', $activo, $empleadoId);
+                $stmtEmpleado->execute();
+                $stmtEmpleado->close();
             }
 
             if ($accion === 'baja') {
@@ -786,15 +732,6 @@ include __DIR__ . '/includes/header.php';
                                                 disabled>
                                             <i class="fas fa-user-slash"></i> En baja
                                         </button>
-                                    <?php else: ?>
-                                        <button type="button"
-                                                class="btn btn-secondary btn-compact"
-                                                data-open="modalAsignar"
-                                                data-id="<?php echo (int)$empleado['id']; ?>"
-                                                data-nombre="<?php echo htmlspecialchars($empleado['nombre'] ?? '', ENT_QUOTES); ?>"
-                                                data-proyecto="<?php echo $proyectoId > 0 ? (int)$proyectoId : '0'; ?>">
-                                            <i class="fas fa-diagram-project"></i> Asignar
-                                        </button>
                                     <?php endif; ?>
                     <button type="button"
                                             class="btn btn-primary btn-compact"
@@ -836,35 +773,6 @@ include __DIR__ . '/includes/header.php';
             </table>
         </div>
     <?php endif; ?>
-</div>
-
-<div id="modalAsignar" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3>Asignar proyecto</h3>
-            <button type="button" class="close-btn" onclick="closeModal('modalAsignar')">&times;</button>
-        </div>
-        <form method="POST">
-            <input type="hidden" name="accion" value="asignar">
-            <input type="hidden" name="empleado_id" id="asignarServicioEspecializadoId">
-            <p style="margin-bottom:18px;">Selecciona el proyecto activo para <strong id="modalAsignarNombre">Servicio Especializado</strong>.</p>
-            <div class="form-group">
-                <label for="asignarProyectoSelect">Proyecto</label>
-                <select name="proyecto_id" id="asignarProyectoSelect" class="form-control">
-                    <option value="0">Sin proyecto activo</option>
-                    <?php foreach ($proyectos as $proyecto): ?>
-                        <option value="<?php echo $proyecto['id']; ?>"><?php echo htmlspecialchars($proyecto['nombre']); ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="modal-actions modal-actions--right">
-                <div class="modal-actions__group">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('modalAsignar')">Cancelar</button>
-                    <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Guardar</button>
-                </div>
-            </div>
-        </form>
-    </div>
 </div>
 
 <div id="modalEditar" class="modal">
@@ -1008,27 +916,6 @@ window.addEventListener('click', (event) => {
         });
     }
     updateCount();
-
-    const asignarButtons = document.querySelectorAll('[data-open="modalAsignar"]');
-    const asignarIdInput = document.getElementById('asignarServicioEspecializadoId');
-    const asignarNombre = document.getElementById('modalAsignarNombre');
-    const asignarSelect = document.getElementById('asignarProyectoSelect');
-
-    asignarButtons.forEach((button) => {
-        button.addEventListener('click', () => {
-            if (asignarIdInput) {
-                asignarIdInput.value = button.dataset.id || '';
-            }
-            if (asignarNombre) {
-                asignarNombre.textContent = button.dataset.nombre || 'Servicio Especializado';
-            }
-            if (asignarSelect) {
-                const proyecto = button.dataset.proyecto || '0';
-                asignarSelect.value = proyecto;
-            }
-            openModal('modalAsignar');
-        });
-    });
 
     const editarButtons = document.querySelectorAll('[data-open="modalEditar"]');
     const editarCampos = {
