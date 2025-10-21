@@ -570,6 +570,9 @@ body {
                         <a href="asistencias.php?proyecto=<?= $p['id'] ?>" class="btn btn-primary">
                             <i class="fas fa-calendar-check"></i> Asistencias
                         </a>
+                        <a href="forms/editar_proyecto.php?id=<?= $p['id'] ?>" class="btn btn-secondary">
+                            <i class="fas fa-pen"></i> Editar
+                        </a>
                         <a href="empleados.php?proyecto=<?= $p['id'] ?>" class="btn btn-secondary">
                             <i class="fas fa-users"></i> Equipo
                         </a>
@@ -602,6 +605,9 @@ body {
                     <div class="project-actions">
                         <a href="asistencias.php?proyecto=<?= $p['id'] ?>" class="btn btn-primary">
                             <i class="fas fa-calendar-check"></i>
+                        </a>
+                        <a href="forms/editar_proyecto.php?id=<?= $p['id'] ?>" class="btn btn-secondary" title="Editar proyecto">
+                            <i class="fas fa-pen"></i>
                         </a>
                         <a href="empleados.php?proyecto=<?= $p['id'] ?>" class="btn btn-secondary">
                             <i class="fas fa-users"></i>

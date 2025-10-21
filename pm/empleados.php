@@ -13,20 +13,42 @@ if($proyecto_id && !in_array($proyecto_id,$permitidos)) $proyecto_id=0;
 
 // Consulta de Servicios Especializados
 if($proyecto_id){
-  // Relación users-empleados es 1:1 por id (empleados.id = users.id)
-  $sqlEmp="SELECT e.id,e.nombre,e.nss,u.email, IFNULL(SUM(CASE WHEN a.hora_entrada IS NOT NULL AND a.hora_salida IS NOT NULL THEN TIMESTAMPDIFF(SECOND,a.hora_entrada,a.hora_salida) ELSE 0 END),0) segs
-           FROM empleado_proyecto ep JOIN empleados e ON e.id=ep.empleado_id LEFT JOIN users u ON u.id=e.id
-           LEFT JOIN asistencia a ON a.empleado_id=e.id AND a.proyecto_id=ep.proyecto_id AND a.fecha>=DATE_SUB(CURDATE(),INTERVAL 7 DAY)
-           WHERE ep.proyecto_id=? AND ep.activo=1 AND e.activo=1
-           GROUP BY e.id ORDER BY e.nombre";
-  $st2=$conn->prepare($sqlEmp); $st2->bind_param('i',$proyecto_id); $st2->execute(); $empleados=$st2->get_result()->fetch_all(MYSQLI_ASSOC);
+  $sqlEmp = "SELECT e.id, e.nombre, e.nss, u.email,
+                    IFNULL(SUM(CASE WHEN a.hora_entrada IS NOT NULL AND a.hora_salida IS NOT NULL THEN TIMESTAMPDIFF(SECOND,a.hora_entrada,a.hora_salida) ELSE 0 END),0) segs
+             FROM (
+               SELECT empleado_id FROM empleado_proyecto WHERE proyecto_id = ?
+               UNION
+               SELECT empleado_id FROM empleado_asignaciones WHERE proyecto_id = ?
+             ) rel
+             JOIN empleados e ON e.id = rel.empleado_id AND e.activo = 1
+             LEFT JOIN users u ON u.id = e.id
+             LEFT JOIN asistencia a ON a.empleado_id = e.id AND a.proyecto_id = ? AND a.fecha >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+             GROUP BY e.id
+             ORDER BY e.nombre";
+  if($st2 = $conn->prepare($sqlEmp)){
+    $st2->bind_param('iii', $proyecto_id, $proyecto_id, $proyecto_id);
+    $st2->execute();
+    $empleados = $st2->get_result()->fetch_all(MYSQLI_ASSOC);
+    $st2->close();
+  } else {
+    $empleados = [];
+  }
 } else {
-  $in = $permitidos? implode(',',array_map('intval',$permitidos)) : '0';
-  $sqlEmp="SELECT e.id,e.nombre,e.nss,u.email, GROUP_CONCAT(DISTINCT g.nombre ORDER BY g.nombre SEPARATOR ' / ') proyectos
-           FROM empleado_proyecto ep JOIN empleados e ON e.id=ep.empleado_id JOIN grupos g ON g.id=ep.proyecto_id LEFT JOIN users u ON u.id=e.id
-           WHERE ep.proyecto_id IN ($in) AND ep.activo=1 AND e.activo=1
-           GROUP BY e.id ORDER BY e.nombre";
-  $empleados=$conn->query($sqlEmp)->fetch_all(MYSQLI_ASSOC);
+  $in = $permitidos ? implode(',', array_map('intval', $permitidos)) : '0';
+  $sqlEmp = "SELECT e.id, e.nombre, e.nss, u.email,
+                    GROUP_CONCAT(DISTINCT g.nombre ORDER BY g.nombre SEPARATOR ' / ') proyectos
+             FROM (
+               SELECT empleado_id, proyecto_id FROM empleado_proyecto WHERE proyecto_id IN ($in)
+               UNION
+               SELECT empleado_id, proyecto_id FROM empleado_asignaciones WHERE proyecto_id IN ($in)
+             ) rel
+             JOIN empleados e ON e.id = rel.empleado_id AND e.activo = 1
+             LEFT JOIN users u ON u.id = e.id
+             LEFT JOIN grupos g ON g.id = rel.proyecto_id
+             GROUP BY e.id
+             ORDER BY e.nombre";
+  $result = $conn->query($sqlEmp);
+  $empleados = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
 }
 $pmCssPath = __DIR__ . '/../assets/pm.css';
 $pmCssVersion = file_exists($pmCssPath) ? filemtime($pmCssPath) : time();
@@ -335,6 +357,34 @@ tr:hover {
     color: var(--gray-700);
 }
 
+.action-cell {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.action-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--gray-200);
+  background: var(--gray-50);
+  color: var(--gray-600);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.action-btn:hover {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: #ffffff;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(59, 130, 246, 0.25);
+}
+
 @media (max-width: 768px) {
     .container {
         padding: 20px 16px;
@@ -438,6 +488,7 @@ tr:hover {
             <th>NSS</th>
             <th>Email</th>
             <?php if($proyecto_id): ?><th>Horas Trabajadas (7 días)</th><?php endif; ?>
+            <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -474,6 +525,16 @@ tr:hover {
                 <?php endif; ?>
               </td>
               <?php endif; ?>
+              <td class="action-cell">
+                <a
+                  href="forms/editar_servicio.php?id=<?= $e['id'] ?>"
+                  class="action-btn"
+                  title="Editar <?= htmlspecialchars($e['nombre'], ENT_QUOTES, 'UTF-8') ?>"
+                  aria-label="Editar <?= htmlspecialchars($e['nombre'], ENT_QUOTES, 'UTF-8') ?>"
+                >
+                  <i class="fas fa-pen"></i>
+                </a>
+              </td>
             </tr>
           <?php endforeach; ?>
         </tbody>
