@@ -13,7 +13,7 @@ if($proyecto_id && !in_array($proyecto_id,$permitidos)) $proyecto_id=0;
 
 // Consulta de Servicios Especializados
 if($proyecto_id){
-  $sqlEmp = "SELECT e.id, e.nombre, e.nss, u.email,
+  $sqlEmp = "SELECT e.id, e.nombre, e.nss, e.empresa, u.email,
                     IFNULL(SUM(CASE WHEN a.hora_entrada IS NOT NULL AND a.hora_salida IS NOT NULL THEN TIMESTAMPDIFF(SECOND,a.hora_entrada,a.hora_salida) ELSE 0 END),0) segs
              FROM (
                SELECT empleado_id FROM empleado_proyecto WHERE proyecto_id = ?
@@ -34,17 +34,13 @@ if($proyecto_id){
     $empleados = [];
   }
 } else {
-  $in = $permitidos ? implode(',', array_map('intval', $permitidos)) : '0';
-  $sqlEmp = "SELECT e.id, e.nombre, e.nss, u.email,
-                    GROUP_CONCAT(DISTINCT g.nombre ORDER BY g.nombre SEPARATOR ' / ') proyectos
-             FROM (
-               SELECT empleado_id, proyecto_id FROM empleado_proyecto WHERE proyecto_id IN ($in)
-               UNION
-               SELECT empleado_id, proyecto_id FROM empleado_asignaciones WHERE proyecto_id IN ($in)
-             ) rel
-             JOIN empleados e ON e.id = rel.empleado_id AND e.activo = 1
+  $sqlEmp = "SELECT e.id, e.nombre, e.nss, e.empresa, u.email,
+                     GROUP_CONCAT(DISTINCT g.nombre ORDER BY g.nombre SEPARATOR ' / ') proyectos
+             FROM empleados e
+             LEFT JOIN empleado_proyecto ep ON ep.empleado_id = e.id AND ep.activo = 1
+             LEFT JOIN grupos g ON g.id = ep.proyecto_id
              LEFT JOIN users u ON u.id = e.id
-             LEFT JOIN grupos g ON g.id = rel.proyecto_id
+             WHERE e.activo = 1
              GROUP BY e.id
              ORDER BY e.nombre";
   $result = $conn->query($sqlEmp);
@@ -485,6 +481,7 @@ tr:hover {
           <tr>
             <?php if(!$proyecto_id): ?><th>Proyectos Asignados</th><?php endif; ?>
             <th>Nombre</th>
+            <th>Empresa</th>
             <th>NSS</th>
             <th>Email</th>
             <?php if($proyecto_id): ?><th>Horas Trabajadas (7 días)</th><?php endif; ?>
@@ -511,6 +508,7 @@ tr:hover {
               <td>
                 <div class="employee-name"><?= htmlspecialchars($e['nombre']) ?></div>
               </td>
+              <td><?= htmlspecialchars($e['empresa'] ?? '-') ?></td>
               <td><?= htmlspecialchars($e['nss'] ?? '-') ?></td>
               <td><?= htmlspecialchars($e['email'] ?? '-') ?></td>
               <?php if($proyecto_id): ?>
@@ -534,13 +532,42 @@ tr:hover {
                 >
                   <i class="fas fa-pen"></i>
                 </a>
+                <button
+                  class="action-btn"
+                  style="color: var(--danger-color); background: none; border: none; cursor: pointer;"
+                  title="Eliminar <?= htmlspecialchars($e['nombre'], ENT_QUOTES, 'UTF-8') ?>"
+                  aria-label="Eliminar <?= htmlspecialchars($e['nombre'], ENT_QUOTES, 'UTF-8') ?>"
+                  onclick="eliminarEmpleado(<?= $e['id'] ?>, '<?= htmlspecialchars(addslashes($e['nombre'])) ?>')"
+                >
+                  <i class="fas fa-trash"></i>
+                </button>
               </td>
             </tr>
           <?php endforeach; ?>
         </tbody>
       </table>
     </div>
-    <?php endif; ?>
+  <?php endif; ?>
+<script>
+function eliminarEmpleado(id, nombre) {
+  if(!confirm('¿Seguro que deseas eliminar el Servicio Especializado "' + nombre + '"? Esta acción no se puede deshacer.')) return;
+  fetch('eliminar_empleado.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'id=' + encodeURIComponent(id)
+  })
+  .then(r => r.json())
+  .then(data => {
+    if(data.success) {
+      alert('Servicio eliminado correctamente.');
+      location.reload();
+    } else {
+      alert('No se pudo eliminar el Servicio.');
+    }
+  })
+  .catch(() => alert('Error al eliminar el Servicio.'));
+}
+</script>
   </div>
 </div>
 </body></html>

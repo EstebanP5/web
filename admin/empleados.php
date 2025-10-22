@@ -235,13 +235,13 @@ $empleados = [];
 $puestosDisponibles = [];
 $conteoProyectos = [];
 $conteoPuestos = [];
-$sql = "SELECT e.*, g.nombre AS proyecto_nombre, g.empresa AS proyecto_empresa, ep.proyecto_id, u.email, u.password_visible,
-        EXISTS(SELECT 1 FROM empleado_documentos d WHERE d.empleado_id = e.id AND d.tipo = 'alta_imss') AS tiene_alta_imss
-        FROM empleados e
-        LEFT JOIN empleado_proyecto ep ON ep.empleado_id = e.id AND ep.activo = 1
-        LEFT JOIN grupos g ON g.id = ep.proyecto_id
-        LEFT JOIN users u ON u.id = e.id
-        ORDER BY e.nombre";
+$sql = "SELECT e.*, e.empresa AS empresa, g.nombre AS proyecto_nombre, g.empresa AS proyecto_empresa, ep.proyecto_id, u.email, u.password_visible,
+    EXISTS(SELECT 1 FROM empleado_documentos d WHERE d.empleado_id = e.id AND d.tipo = 'alta_imss') AS tiene_alta_imss
+    FROM empleados e
+    LEFT JOIN empleado_proyecto ep ON ep.empleado_id = e.id AND ep.activo = 1
+    LEFT JOIN grupos g ON g.id = ep.proyecto_id
+    LEFT JOIN users u ON u.id = e.id
+    ORDER BY e.nombre";
 $resultEmpleados = $conn->query($sql);
 if ($resultEmpleados) {
     while ($row = $resultEmpleados->fetch_assoc()) {
@@ -268,6 +268,7 @@ if ($resultEmpleados) {
             if (!isset($conteoProyectos[$proyectoAsignado])) {
                 $conteoProyectos[$proyectoAsignado] = [
                     'nombre' => $row['proyecto_nombre'] ?? ('Proyecto #' . $proyectoAsignado),
+                    'empresa' => $row['empresa'] ?? '',
                     'total' => 0,
                 ];
             }
@@ -649,6 +650,7 @@ include __DIR__ . '/includes/header.php';
                 <thead>
                     <tr>
                         <th>Servicio Especializado</th>
+                        <th>Empresa</th>
                         <th>Contacto</th>
                         <th>Proyecto activo</th>
                         <th>Estado</th>
@@ -681,6 +683,9 @@ include __DIR__ . '/includes/header.php';
                                 <div class="table-entity">
                                     <strong><?php echo htmlspecialchars($empleado['nombre'] ?? ''); ?></strong>
                                 </div>
+                            </td>
+                            <td data-label="Empresa">
+                                <?php echo htmlspecialchars($empleado['empresa'] ?? ''); ?>
                             </td>
                             <td data-label="Contacto">
                                 <?php if (!empty($empleado['telefono'])): ?>

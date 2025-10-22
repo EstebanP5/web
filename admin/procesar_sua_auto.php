@@ -226,12 +226,17 @@ suaEnsureRolColumnSupportsServicioEspecializado($conn);
 // Crear tablas si faltan (idempotente básico)
 $conn->query("CREATE TABLE IF NOT EXISTS sua_lotes (id INT AUTO_INCREMENT PRIMARY KEY, fecha_proceso DATE NOT NULL, archivo VARCHAR(255) NOT NULL, total INT NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
 $conn->query("CREATE TABLE IF NOT EXISTS sua_empleados (id INT AUTO_INCREMENT PRIMARY KEY, lote_id INT NOT NULL, nss VARCHAR(25) NOT NULL, nombre VARCHAR(150) NOT NULL, curp VARCHAR(25) NOT NULL, UNIQUE KEY uniq_lote_nss (lote_id,nss), CONSTRAINT fk_lote FOREIGN KEY(lote_id) REFERENCES sua_lotes(id) ON DELETE CASCADE)");
+
 $colsEmp = $conn->query("SHOW COLUMNS FROM empleados LIKE 'bloqueado'");
 if(!$colsEmp->num_rows) { $conn->query("ALTER TABLE empleados ADD COLUMN bloqueado TINYINT(1) NOT NULL DEFAULT 0"); }
 $colsNss = $conn->query("SHOW COLUMNS FROM empleados LIKE 'nss'");
 if(!$colsNss->num_rows) { $conn->query("ALTER TABLE empleados ADD COLUMN nss VARCHAR(25) NULL"); }
 $colsCurp = $conn->query("SHOW COLUMNS FROM empleados LIKE 'curp'");
 if(!$colsCurp->num_rows) { $conn->query("ALTER TABLE empleados ADD COLUMN curp VARCHAR(25) NULL"); }
+$colsEmpresaSE = $conn->query("SHOW COLUMNS FROM sua_empleados LIKE 'empresa'");
+if(!$colsEmpresaSE->num_rows) { $conn->query("ALTER TABLE sua_empleados ADD COLUMN empresa VARCHAR(50) NULL"); }
+$colsEmpresaEmp = $conn->query("SHOW COLUMNS FROM empleados LIKE 'empresa'");
+if(!$colsEmpresaEmp->num_rows) { $conn->query("ALTER TABLE empleados ADD COLUMN empresa VARCHAR(50) NULL"); }
 $conn->query("CREATE TABLE IF NOT EXISTS autorizados_mes (fecha DATE NOT NULL, nss VARCHAR(25) NOT NULL, nombre VARCHAR(150) NOT NULL, curp VARCHAR(25) NOT NULL, PRIMARY KEY(fecha,nss))");
 
 $colPwdVisible = $conn->query("SHOW COLUMNS FROM users LIKE 'password_visible'");
@@ -240,6 +245,25 @@ if(!$colPwdVisible->num_rows) {
 }
 
 $mensaje=''; $error=''; $lote_id=null; $empleados_extraidos=[]; $fecha_proceso=null; $faltantes=[]; $proyectos=[]; $credenciales_generadas=[];
+// Guardar empresa seleccionada en la sesión y en los empleados extraídos
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_autorizados'])) {
+  $empresa = isset($_POST['empresa_sua']) ? trim($_POST['empresa_sua']) : '';
+  if ($empresa) {
+    $_SESSION['ultima_sua_auto']['empresa'] = $empresa;
+    if (!empty($empleados_extraidos)) {
+      foreach ($empleados_extraidos as &$e) {
+        $e['empresa'] = $empresa;
+      }
+      unset($e);
+    }
+    if (!empty($_SESSION['ultima_sua_auto']['empleados'])) {
+      foreach ($_SESSION['ultima_sua_auto']['empleados'] as &$e) {
+        $e['empresa'] = $empresa;
+      }
+      unset($e);
+    }
+  }
+}
 
 // Nuevo: permitir procesamiento directo de una lista pegada (NSS NOMBRE CURP por línea)
 function extraerDesdeLista($texto){
@@ -728,12 +752,13 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['lista_sua']) && trim($_P
     $stmt=$conn->prepare('INSERT INTO sua_lotes(fecha_proceso,archivo,total) VALUES(?,?,?)');
     $total=count($empleados_extraidos); $archivo='lista_manual.txt'; $stmt->bind_param('ssi',$fecha_proceso,$archivo,$total); $stmt->execute(); $lote_id=$stmt->insert_id;
     foreach($empleados_extraidos as $emp){
-      $stmtE=$conn->prepare('INSERT IGNORE INTO sua_empleados(lote_id,nss,nombre,curp) VALUES(?,?,?,?)');
-      $stmtE->bind_param('isss',$lote_id,$emp['nss'],$emp['nombre'],$emp['curp']); $stmtE->execute();
+      $empresa = isset($emp['empresa']) ? $emp['empresa'] : (isset($_SESSION['ultima_sua_auto']['empresa']) ? $_SESSION['ultima_sua_auto']['empresa'] : null);
+      $stmtE=$conn->prepare('INSERT IGNORE INTO sua_empleados(lote_id,nss,nombre,curp,empresa) VALUES(?,?,?,?,?)');
+      $stmtE->bind_param('issss',$lote_id,$emp['nss'],$emp['nombre'],$emp['curp'],$empresa); $stmtE->execute();
       $stmtA=$conn->prepare('INSERT INTO autorizados_mes(fecha,nss,nombre,curp) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE nombre=VALUES(nombre), curp=VALUES(curp)');
       $mesFecha=substr($fecha_proceso,0,7).'-01'; $stmtA->bind_param('ssss',$mesFecha,$emp['nss'],$emp['nombre'],$emp['curp']); $stmtA->execute();
       $resEmp=$conn->prepare('SELECT id FROM empleados WHERE nss=? LIMIT 1'); $resEmp->bind_param('s',$emp['nss']); $resEmp->execute(); $row=$resEmp->get_result()->fetch_assoc();
-      if($row){ $up=$conn->prepare('UPDATE empleados SET curp=?, bloqueado=0 WHERE id=?'); $up->bind_param('si',$emp['curp'],$row['id']); $up->execute(); }
+      if($row){ $up=$conn->prepare('UPDATE empleados SET curp=?, bloqueado=0, empresa=? WHERE id=?'); $up->bind_param('sssi',$emp['curp'],$empresa,$row['id']); $up->execute(); }
     }
   $mensaje='Lista procesada. Servicios Especializados detectados: '.$total;
   // Guardar en sesión para acciones posteriores
@@ -760,17 +785,18 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_FILES['sua_pdf']) && (!isset($
                         $stmt=$conn->prepare('INSERT INTO sua_lotes(fecha_proceso,archivo,total) VALUES(?,?,?)');
                         $total=count($empleados_extraidos); $archivo=basename($dest); $stmt->bind_param('ssi',$fecha_proceso,$archivo,$total); $stmt->execute(); $lote_id=$stmt->insert_id;
                         // Insertar empleados del lote y registrar autorizados del mes
-                        foreach($empleados_extraidos as $emp){
-                            $stmtE=$conn->prepare('INSERT IGNORE INTO sua_empleados(lote_id,nss,nombre,curp) VALUES(?,?,?,?)');
-                            $stmtE->bind_param('isss',$lote_id,$emp['nss'],$emp['nombre'],$emp['curp']); $stmtE->execute();
-                            $stmtA=$conn->prepare('INSERT INTO autorizados_mes(fecha,nss,nombre,curp) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE nombre=VALUES(nombre), curp=VALUES(curp)');
-                            $mesFecha=substr($fecha_proceso,0,7).'-01'; $stmtA->bind_param('ssss',$mesFecha,$emp['nss'],$emp['nombre'],$emp['curp']); $stmtA->execute();
-                            // Sincronizar con empleados (por NSS si existe)
-                            $resEmp=$conn->prepare('SELECT id FROM empleados WHERE nss=? LIMIT 1'); $resEmp->bind_param('s',$emp['nss']); $resEmp->execute(); $row=$resEmp->get_result()->fetch_assoc();
-                            if($row){
-                                $up=$conn->prepare('UPDATE empleados SET curp=?, bloqueado=0 WHERE id=?'); $up->bind_param('si',$emp['curp'],$row['id']); $up->execute();
-                            }
-                        }
+            foreach($empleados_extraidos as $emp){
+              $empresa = isset($emp['empresa']) ? $emp['empresa'] : (isset($_SESSION['ultima_sua_auto']['empresa']) ? $_SESSION['ultima_sua_auto']['empresa'] : null);
+              $stmtE=$conn->prepare('INSERT IGNORE INTO sua_empleados(lote_id,nss,nombre,curp,empresa) VALUES(?,?,?,?,?)');
+              $stmtE->bind_param('issss',$lote_id,$emp['nss'],$emp['nombre'],$emp['curp'],$empresa); $stmtE->execute();
+              $stmtA=$conn->prepare('INSERT INTO autorizados_mes(fecha,nss,nombre,curp) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE nombre=VALUES(nombre), curp=VALUES(curp)');
+              $mesFecha=substr($fecha_proceso,0,7).'-01'; $stmtA->bind_param('ssss',$mesFecha,$emp['nss'],$emp['nombre'],$emp['curp']); $stmtA->execute();
+              // Sincronizar con empleados (por NSS si existe)
+              $resEmp=$conn->prepare('SELECT id FROM empleados WHERE nss=? LIMIT 1'); $resEmp->bind_param('s',$emp['nss']); $resEmp->execute(); $row=$resEmp->get_result()->fetch_assoc();
+              if($row){
+                $up=$conn->prepare('UPDATE empleados SET curp=?, bloqueado=0, empresa=? WHERE id=?'); $up->bind_param('sssi',$emp['curp'],$empresa,$row['id']); $up->execute();
+              }
+            }
                         $mensaje='Procesado correctamente. Servicios Especializados detectados: '.$total;
             $_SESSION['ultima_sua_auto']=['fecha'=>$fecha_proceso,'empleados'=>$empleados_extraidos,'credenciales'=>$credenciales_generadas];
                     }
@@ -1381,10 +1407,16 @@ th {
             </h3>
     <div class="mini-table-wrapper">
       <table>
-        <thead><tr><th>#</th><th>NSS</th><th>Nombre</th><th>CURP</th></tr></thead>
+        <thead><tr><th>#</th><th>NSS</th><th>Nombre</th><th>CURP</th><th>Empresa</th></tr></thead>
         <tbody>
           <?php $i=1; foreach($empleados_extraidos as $e): ?>
-            <tr><td><?= $i++ ?></td><td><?= htmlspecialchars($e['nss']) ?></td><td><?= htmlspecialchars($e['nombre']) ?></td><td><?= htmlspecialchars($e['curp']) ?></td></tr>
+            <tr>
+              <td><?= $i++ ?></td>
+              <td><?= htmlspecialchars($e['nss']) ?></td>
+              <td><?= htmlspecialchars($e['nombre']) ?></td>
+              <td><?= htmlspecialchars($e['curp']) ?></td>
+              <td><?= htmlspecialchars($e['empresa'] ?? ($_SESSION['ultima_sua_auto']['empresa'] ?? '')) ?></td>
+            </tr>
           <?php endforeach; ?>
         </tbody>
       </table>
@@ -1399,6 +1431,12 @@ th {
                 </h4>
                 <form method="post" style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
                   <input type="hidden" name="guardar_autorizados" value="1">
+                  <label for="empresa_sua" style="font-size:14px;font-weight:600;">Empresa:</label>
+                  <select name="empresa_sua" id="empresa_sua" style="padding:8px 12px;border-radius:8px;">
+                    <option value="Stone">Stone</option>
+                    <option value="Remedios">Remedios</option>
+                    <option value="ErgoSolar">ErgoSolar</option>
+                  </select>
                   <button type="submit" class="btn-success">
                       <i class="fas fa-check"></i>
                       Guardar / Actualizar
@@ -1517,7 +1555,12 @@ th {
                 <tr>
                   <td style="text-align:center;"><input type="checkbox" name="lote_ids[]" value="<?= (int)$l['id'] ?>" title="Lote #<?= (int)$l['id'] ?>"></td>
                   <td><?= htmlspecialchars($l['fecha_proceso']) ?></td>
-                  <td><a href="ver_pdf.php?archivo=<?= urlencode($l['archivo']) ?>" target="_blank" style="color:#ff7a00;font-weight:500;">Ver PDF</a></td>
+                  <td>
+                    <a href="ver_pdf.php?archivo=<?= urlencode($l['archivo']) ?>" target="_blank" style="color:#ff7a00;font-weight:500;">Ver PDF</a>
+                    <a href="descargar_credenciales_lote.php?lote_id=<?= (int)$l['id'] ?>" class="btn-secondary" style="margin-left:8px;padding:4px 10px;font-size:13px;vertical-align:middle;" title="Descargar credenciales CSV">
+                      <i class="fas fa-file-csv"></i> CSV
+                    </a>
+                  </td>
                   <td><?= $l['total'] ?></td>
                 </tr>
               <?php endwhile; else: ?>
@@ -1526,12 +1569,11 @@ th {
             </tbody>
           </table>
         </div>
-        <div style="margin-top:24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;">
+        <div style="margin-top:24px;display:flex;justify-content:flex-start;align-items:center;flex-wrap:wrap;gap:16px;">
           <button type="submit" class="btn-danger">
               <i class="fas fa-trash"></i>
               Eliminar Seleccionados
           </button>
-          <small style="font-size:13px;color:#64748b;">Se borrarán los PDFs y sus empleados asociados (detalle) almacenados en BD.</small>
         </div>
       </form>
     </div>

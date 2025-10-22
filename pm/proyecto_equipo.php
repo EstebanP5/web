@@ -357,7 +357,7 @@ unset($_SESSION['pm_equipo_success'], $_SESSION['pm_equipo_error']);
 
 $assignments = [];
 if ($stmtAssignments = $conn->prepare('SELECT ea.id, ea.empleado_id, ea.fecha_inicio, ea.fecha_fin, ea.status,
-    e.nombre, e.telefono, e.nss, u.email
+    e.nombre, e.telefono, e.nss, e.empresa, u.email
     FROM empleado_asignaciones ea
     JOIN empleados e ON e.id = ea.empleado_id
     LEFT JOIN users u ON u.id = e.id
@@ -673,7 +673,7 @@ $pmCssVersion = file_exists($pmCssPath) ? filemtime($pmCssPath) : time();
             gap: 4px;
         }
         .pm-period span {
-            font-size: 13px;
+            font-size:13px;
             color: #475569;
         }
         .pm-subtext {
@@ -683,6 +683,11 @@ $pmCssVersion = file_exists($pmCssPath) ? filemtime($pmCssPath) : time();
         .pm-hint {
             font-size: 12px;
             color: #94a3b8;
+        }
+        .pm-cta {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
         }
         @media (max-width: 1024px) {
             .pm-grid {
@@ -735,6 +740,7 @@ $pmCssVersion = file_exists($pmCssPath) ? filemtime($pmCssPath) : time();
                         <thead>
                             <tr>
                                 <th>Servicio</th>
+                                <th>Empresa</th>
                                 <th>Periodo</th>
                                 <th>Contacto</th>
                                 <th>Estado</th>
@@ -748,9 +754,11 @@ $pmCssVersion = file_exists($pmCssPath) ? filemtime($pmCssPath) : time();
                                         <strong><?= htmlspecialchars($assignment['nombre'] ?? '', ENT_QUOTES, 'UTF-8'); ?></strong>
                                         <div class="pm-subtext">NSS: <?= htmlspecialchars($assignment['nss'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></div>
                                     </td>
+                                    <td><?= htmlspecialchars($assignment['empresa'] ?? '', ENT_QUOTES, 'UTF-8'); ?></td>
                                     <td>
                                         <div class="pm-period">
-                                            <span>Del <?= pm_format_date($assignment['fecha_inicio']); ?> al <?= pm_format_date($assignment['fecha_fin']); ?></span>
+                                            <span>Del <?= pm_format_date($assignment['fecha_inicio']); ?></span>
+                                            <span>al <?= pm_format_date($assignment['fecha_fin']); ?></span>
                                         </div>
                                     </td>
                                     <td>
@@ -763,8 +771,8 @@ $pmCssVersion = file_exists($pmCssPath) ? filemtime($pmCssPath) : time();
                                     </td>
                                     <td>
                                         <form method="post" style="margin:0;">
-                                            <input type="hidden" name="action" value="complete" />
-                                            <input type="hidden" name="assignment_id" value="<?= (int)$assignment['id']; ?>" />
+                                            <input type="hidden" name="action" value="complete">
+                                            <input type="hidden" name="assignment_id" value="<?= (int)$assignment['id']; ?>">
                                             <button type="submit" class="btn btn-danger" title="Finalizar"><i class="fas fa-flag-checkered"></i></button>
                                         </form>
                                     </td>
@@ -777,7 +785,7 @@ $pmCssVersion = file_exists($pmCssPath) ? filemtime($pmCssPath) : time();
         </div>
 
         <div class="pm-card">
-            <h2 class="pm-section-title"><i class="fas fa-calendar-plus"></i> Programar Servicio</h2>
+            <h2 class="pm-section-title"><i class="fas fa-calendar-plus"></i> Programar asignación</h2>
             <?php if (empty($availableEmployees)): ?>
                 <div class="pm-empty">
                     <i class="fas fa-users-slash" style="font-size:32px; margin-bottom:12px;"></i>
@@ -828,7 +836,7 @@ $pmCssVersion = file_exists($pmCssPath) ? filemtime($pmCssPath) : time();
                             <input type="date" name="fecha_fin" id="fecha_fin" required min="<?= htmlspecialchars($minScheduleDate, ENT_QUOTES, 'UTF-8'); ?>"<?php if ($projectEndLimit): ?> max="<?= htmlspecialchars($projectEndLimit, ENT_QUOTES, 'UTF-8'); ?>"<?php endif; ?>>
                         </div>
                     </div>
-                    <input type="hidden" name="action" value="schedule" />
+                    <input type="hidden" name="action" value="schedule">
                     <button type="submit" class="btn btn-primary" style="justify-content:center;"><i class="fas fa-calendar-check"></i> Guardar programación</button>
                     <p class="pm-hint">Los cambios se aplican en automático en las fechas indicadas y liberan al Servicio de otros proyectos que administres.</p>
                 </form>
@@ -850,7 +858,9 @@ $pmCssVersion = file_exists($pmCssPath) ? filemtime($pmCssPath) : time();
                         <thead>
                             <tr>
                                 <th>Servicio</th>
+                                <th>Empresa</th>
                                 <th>Periodo</th>
+                                <th>Contacto</th>
                                 <th>Estado</th>
                                 <th></th>
                             </tr>
@@ -860,21 +870,24 @@ $pmCssVersion = file_exists($pmCssPath) ? filemtime($pmCssPath) : time();
                                 <tr>
                                     <td>
                                         <strong><?= htmlspecialchars($assignment['nombre'] ?? '', ENT_QUOTES, 'UTF-8'); ?></strong>
-                                        <div class="pm-subtext">Contacto: <?= htmlspecialchars($assignment['telefono'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></div>
+                                        <div class="pm-subtext">NSS: <?= htmlspecialchars($assignment['nss'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></div>
                                     </td>
+                                    <td><?= htmlspecialchars($assignment['empresa'] ?? '', ENT_QUOTES, 'UTF-8'); ?></td>
                                     <td>
                                         <div class="pm-period">
-                                            <span>Del <?= pm_format_date($assignment['fecha_inicio']); ?> al <?= pm_format_date($assignment['fecha_fin']); ?></span>
+                                            <span>Del <?= pm_format_date($assignment['fecha_inicio']); ?></span>
+                                            <span>al <?= pm_format_date($assignment['fecha_fin']); ?></span>
                                         </div>
                                     </td>
+                                    <td><?= htmlspecialchars($assignment['telefono'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></td>
                                     <td>
                                         <?php $badge = $statusBadges[$assignment['status']] ?? $statusBadges['programado']; ?>
                                         <span class="status-tag <?= $badge['class']; ?>"><?= $badge['label']; ?></span>
                                     </td>
                                     <td>
                                         <form method="post" style="margin:0;">
-                                            <input type="hidden" name="action" value="cancel" />
-                                            <input type="hidden" name="assignment_id" value="<?= (int)$assignment['id']; ?>" />
+                                            <input type="hidden" name="action" value="cancel">
+                                            <input type="hidden" name="assignment_id" value="<?= (int)$assignment['id']; ?>">
                                             <button type="submit" class="btn btn-danger" title="Cancelar"><i class="fas fa-times"></i></button>
                                         </form>
                                     </td>
@@ -887,7 +900,7 @@ $pmCssVersion = file_exists($pmCssPath) ? filemtime($pmCssPath) : time();
         </div>
 
         <div class="pm-card" style="overflow:hidden;">
-            <h2 class="pm-section-title"><i class="fas fa-history"></i> Historial reciente</h2>
+            <h2 class="pm-section-title"><i class="fas fa-history"></i> Historial de asignaciones</h2>
             <?php if (empty($finishedAssignments)): ?>
                 <div class="pm-empty">
                     <i class="fas fa-clipboard-check" style="font-size:32px; margin-bottom:12px;"></i>

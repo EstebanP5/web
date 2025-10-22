@@ -31,10 +31,11 @@ $responsables = $conn->query("SELECT u.* FROM usuarios u WHERE u.rol = 'responsa
     <h1>Listas de Servicios Especializados, PMs y Responsables de Obra</h1>
     <div class="section-title">Servicios Especializados</div>
     <table>
-        <tr><th>Nombre</th><th>CURP</th><th>NSS</th><th>Teléfono</th><th>Proyecto</th></tr>
+    <tr><th>Nombre</th><th>Empresa</th><th>CURP</th><th>NSS</th><th>Teléfono</th><th>Proyecto</th></tr>
         <?php foreach ($empleados as $e): ?>
         <tr>
             <td><?= htmlspecialchars($e['nombre']) ?></td>
+            <td><?= htmlspecialchars($e['empresa'] ?? '') ?></td>
             <td><?= htmlspecialchars($e['curp'] ?? '') ?></td>
             <td><?= htmlspecialchars($e['nss'] ?? '') ?></td>
             <td><?= htmlspecialchars($e['telefono'] ?? '') ?></td>

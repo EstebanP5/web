@@ -587,6 +587,9 @@ body {
                             <i class="fas fa-map-marker-alt"></i> Ubicación
                         </a>
                         <?php endif; ?>
+                        <button class="btn btn-danger" onclick="eliminarProyecto(<?= $p['id'] ?>, '<?= htmlspecialchars(addslashes($p['nombre'])) ?>')">
+                            <i class="fas fa-trash"></i> Eliminar
+                        </button>
                     </div>
                 </div>
                 <?php else: ?>
@@ -620,6 +623,9 @@ body {
                             <i class="fas fa-map-marker-alt"></i>
                         </a>
                         <?php endif; ?>
+                        <button class="btn btn-danger" onclick="eliminarProyecto(<?= $p['id'] ?>, '<?= htmlspecialchars(addslashes($p['nombre'])) ?>')" title="Eliminar proyecto">
+                            <i class="fas fa-trash"></i>
+                        </button>
                     </div>
                 </div>
                 <?php endif; ?>
@@ -676,6 +682,25 @@ document.addEventListener('keydown', function(e) {
         document.getElementById('searchInput').focus();
     }
 });
+
+function eliminarProyecto(id, nombre) {
+    if(!confirm('¿Seguro que deseas eliminar el proyecto "' + nombre + '"? Esta acción no se puede deshacer.')) return;
+    fetch('eliminar_proyecto.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'id=' + encodeURIComponent(id)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if(data.success) {
+            alert('Proyecto eliminado correctamente.');
+            location.reload();
+        } else {
+            alert('No se pudo eliminar el proyecto.');
+        }
+    })
+    .catch(() => alert('Error al eliminar el proyecto.'));
+}
 </script>
 
 </body></html>

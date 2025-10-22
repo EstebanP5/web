@@ -891,10 +891,11 @@ $minScheduleDate = $projectStartLimit && $projectStartLimit > $today ? $projectS
 					<table>
 						<thead>
 							<tr>
-								<th>Colaborador</th>
-								<th>Periodo</th>
-								<th>Contacto</th>
-								<th></th>
+							<th>Colaborador</th>
+							<th>Empresa</th>
+							<th>Periodo</th>
+							<th>Contacto</th>
+							<th></th>
 							</tr>
 						</thead>
 						<tbody>
@@ -905,22 +906,23 @@ $minScheduleDate = $projectStartLimit && $projectStartLimit > $today ? $projectS
 									$rowClassAttr = $isHighlighted ? ' class="row-highlight"' : '';
 								?>
 								<tr data-assignment-employee="<?= $assignmentEmployeeId; ?>"<?= $rowClassAttr; ?>>
-									<td>
-										<strong><?= htmlspecialchars($assignment['nombre'] ?? '', ENT_QUOTES, 'UTF-8'); ?></strong><br>
-										<span style="font-size:12px;color:var(--muted);">NSS: <?= htmlspecialchars($assignment['nss'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></span>
-									</td>
-									<td>Del <?= admin_format_date($assignment['fecha_inicio']); ?> al <?= admin_format_date($assignment['fecha_fin']); ?></td>
-									<td>
-										<div><?= htmlspecialchars($assignment['telefono'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></div>
-										<div style="font-size:12px;color:var(--muted);"><?= htmlspecialchars($assignment['email'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></div>
-									</td>
-									<td>
-										<form method="post" style="margin:0;">
-											<input type="hidden" name="action" value="complete">
-											<input type="hidden" name="assignment_id" value="<?= (int)$assignment['id']; ?>">
-											<button type="submit" class="btn btn-danger" title="Finalizar"><i class="fa-solid fa-flag-checkered"></i></button>
-										</form>
-									</td>
+								<td>
+								<strong><?= htmlspecialchars($assignment['nombre'] ?? '', ENT_QUOTES, 'UTF-8'); ?></strong><br>
+								<span style="font-size:12px;color:var(--muted);">NSS: <?= htmlspecialchars($assignment['nss'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></span>
+								</td>
+								<td><?= htmlspecialchars($assignment['empresa'] ?? '', ENT_QUOTES, 'UTF-8'); ?></td>
+								<td>Del <?= admin_format_date($assignment['fecha_inicio']); ?> al <?= admin_format_date($assignment['fecha_fin']); ?></td>
+								<td>
+								<div><?= htmlspecialchars($assignment['telefono'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></div>
+								<div style="font-size:12px;color:var(--muted);"><?= htmlspecialchars($assignment['email'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></div>
+								</td>
+								<td>
+								<form method="post" style="margin:0;">
+								<input type="hidden" name="action" value="complete">
+								<input type="hidden" name="assignment_id" value="<?= (int)$assignment['id']; ?>">
+								<button type="submit" class="btn btn-danger" title="Finalizar"><i class="fa-solid fa-flag-checkered"></i></button>
+								</form>
+								</td>
 								</tr>
 							<?php endforeach; ?>
 						</tbody>
@@ -1000,55 +1002,50 @@ $minScheduleDate = $projectStartLimit && $projectStartLimit > $today ? $projectS
 
 	<div class="columns">
 		<div class="card">
-			<h2 class="section-title"><i class="fa-solid fa-clock"></i> Asignaciones programadas</h2>
-			<?php if (empty($upcomingAssignments)): ?>
-				<div class="empty-state">
-					<i class="fa-regular fa-calendar-check"></i>
-					<strong>No hay periodos futuros.</strong>
-					<span>Los nuevos periodos aparecerán aquí.</span>
-				</div>
-			<?php else: ?>
-				<div style="overflow-x:auto;">
-					<table>
-						<thead>
-							<tr>
-								<th>Colaborador</th>
-								<th>Periodo</th>
-								<th>Estado</th>
-								<th></th>
-							</tr>
-						</thead>
-						<tbody>
-							<?php foreach ($upcomingAssignments as $assignment): ?>
-								<?php
-									$assignmentEmployeeId = (int)($assignment['empleado_id'] ?? 0);
-									$isHighlighted = $selectedEmployeeId > 0 && $assignmentEmployeeId === $selectedEmployeeId;
-									$rowClassAttr = $isHighlighted ? ' class="row-highlight"' : '';
-								?>
-								<tr data-assignment-employee="<?= $assignmentEmployeeId; ?>"<?= $rowClassAttr; ?>>
-									<td>
-										<strong><?= htmlspecialchars($assignment['nombre'] ?? '', ENT_QUOTES, 'UTF-8'); ?></strong>
-										<div style="font-size:12px;color:var(--muted);">Contacto: <?= htmlspecialchars($assignment['telefono'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></div>
-									</td>
-									<td>Del <?= admin_format_date($assignment['fecha_inicio']); ?> al <?= admin_format_date($assignment['fecha_fin']); ?></td>
-									<td><span class="status-badge status-upcoming"><i class="fa-regular fa-clock"></i> Programado</span></td>
-									<td>
-										<form method="post" style="margin:0;" onsubmit="return confirm('¿Cancelar la programación de <?= htmlspecialchars($assignment['nombre'] ?? 'este colaborador', ENT_QUOTES, 'UTF-8'); ?>?');">
-											<input type="hidden" name="action" value="cancel">
-											<input type="hidden" name="assignment_id" value="<?= (int)$assignment['id']; ?>">
-											<button type="submit" class="btn btn-outline"><i class="fa-solid fa-xmark"></i> Cancelar</button>
-										</form>
-									</td>
-								</tr>
-							<?php endforeach; ?>
-						</tbody>
-					</table>
-				</div>
-			<?php endif; ?>
-		</div>
-	</div>
-
-	<div class="card">
+			   <h2 class="section-title"><i class="fa-solid fa-clock"></i> Asignaciones programadas</h2>
+			   <?php if (empty($upcomingAssignments)): ?>
+				   <div class="empty-state">
+					   <i class="fa-regular fa-calendar-check"></i>
+					   <strong>No hay periodos futuros.</strong>
+					   <span>Los nuevos periodos aparecerán aquí.</span>
+				   </div>
+			   <?php else: ?>
+				   <div style="overflow-x:auto;">
+					   <table>
+						   <thead>
+							   <tr>
+								   <th>Colaborador</th>
+								   <th>Empresa</th>
+								   <th>Periodo</th>
+								   <th>Contacto</th>
+								   <th></th>
+							   </tr>
+						   </thead>
+						   <tbody>
+							   <?php foreach ($upcomingAssignments as $assignment): ?>
+								   <?php
+									   $assignmentEmployeeId = (int)($assignment['empleado_id'] ?? 0);
+									   $isHighlighted = $selectedEmployeeId > 0 && $assignmentEmployeeId === $selectedEmployeeId;
+									   $rowClassAttr = $isHighlighted ? ' class="row-highlight"' : '';
+								   ?>
+								   <tr data-assignment-employee="<?= $assignmentEmployeeId; ?>"<?= $rowClassAttr; ?>>
+									   <td><strong><?= htmlspecialchars($assignment['nombre'] ?? '', ENT_QUOTES, 'UTF-8'); ?></strong></td>
+									   <td><?= htmlspecialchars($assignment['empresa'] ?? '', ENT_QUOTES, 'UTF-8'); ?></td>
+									   <td>Del <?= admin_format_date($assignment['fecha_inicio']); ?> al <?= admin_format_date($assignment['fecha_fin']); ?></td>
+									   <td><?= htmlspecialchars($assignment['telefono'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></td>
+									   <td>
+										   <form method="post" style="margin:0;">
+											   <input type="hidden" name="action" value="cancel">
+											   <input type="hidden" name="assignment_id" value="<?= (int)$assignment['id']; ?>">
+											   <button type="submit" class="btn btn-danger" title="Cancelar"><i class="fa-solid fa-xmark"></i></button>
+										   </form>
+									   </td>
+								   </tr>
+							   <?php endforeach; ?>
+						   </tbody>
+					   </table>
+				   </div>
+			   <?php endif; ?>
 		<h2 class="section-title"><i class="fa-solid fa-clipboard-list"></i> Historial reciente</h2>
 		<?php if (empty($finishedAssignments)): ?>
 			<div class="empty-state">
