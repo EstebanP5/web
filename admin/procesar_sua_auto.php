@@ -224,27 +224,160 @@ function suaEnsureRolColumnSupportsServicioEspecializado(mysqli $conn): void {
 suaEnsureRolColumnSupportsServicioEspecializado($conn);
 
 // Crear tablas si faltan (idempotente básico)
-$conn->query("CREATE TABLE IF NOT EXISTS sua_lotes (id INT AUTO_INCREMENT PRIMARY KEY, fecha_proceso DATE NOT NULL, archivo VARCHAR(255) NOT NULL, total INT NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+$conn->query("CREATE TABLE IF NOT EXISTS sua_lotes (id INT AUTO_INCREMENT PRIMARY KEY, fecha_proceso DATE NOT NULL, archivo VARCHAR(255) NOT NULL, total INT NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, INDEX idx_fecha_proceso (fecha_proceso))");
 $conn->query("CREATE TABLE IF NOT EXISTS sua_empleados (id INT AUTO_INCREMENT PRIMARY KEY, lote_id INT NOT NULL, nss VARCHAR(25) NOT NULL, nombre VARCHAR(150) NOT NULL, curp VARCHAR(25) NOT NULL, UNIQUE KEY uniq_lote_nss (lote_id,nss), CONSTRAINT fk_lote FOREIGN KEY(lote_id) REFERENCES sua_lotes(id) ON DELETE CASCADE)");
-
-$colsEmp = $conn->query("SHOW COLUMNS FROM empleados LIKE 'bloqueado'");
-if(!$colsEmp->num_rows) { $conn->query("ALTER TABLE empleados ADD COLUMN bloqueado TINYINT(1) NOT NULL DEFAULT 0"); }
-$colsNss = $conn->query("SHOW COLUMNS FROM empleados LIKE 'nss'");
-if(!$colsNss->num_rows) { $conn->query("ALTER TABLE empleados ADD COLUMN nss VARCHAR(25) NULL"); }
-$colsCurp = $conn->query("SHOW COLUMNS FROM empleados LIKE 'curp'");
-if(!$colsCurp->num_rows) { $conn->query("ALTER TABLE empleados ADD COLUMN curp VARCHAR(25) NULL"); }
-$colsEmpresaSE = $conn->query("SHOW COLUMNS FROM sua_empleados LIKE 'empresa'");
-if(!$colsEmpresaSE->num_rows) { $conn->query("ALTER TABLE sua_empleados ADD COLUMN empresa VARCHAR(50) NULL"); }
-$colsEmpresaEmp = $conn->query("SHOW COLUMNS FROM empleados LIKE 'empresa'");
-if(!$colsEmpresaEmp->num_rows) { $conn->query("ALTER TABLE empleados ADD COLUMN empresa VARCHAR(50) NULL"); }
 $conn->query("CREATE TABLE IF NOT EXISTS autorizados_mes (fecha DATE NOT NULL, nss VARCHAR(25) NOT NULL, nombre VARCHAR(150) NOT NULL, curp VARCHAR(25) NOT NULL, PRIMARY KEY(fecha,nss))");
 
-$colPwdVisible = $conn->query("SHOW COLUMNS FROM users LIKE 'password_visible'");
-if(!$colPwdVisible->num_rows) {
-  $conn->query("ALTER TABLE users ADD COLUMN password_visible VARCHAR(191) NULL AFTER password");
+// Optimización: Consolidar verificaciones de columnas en una sola consulta por tabla
+function suaEnsureColumnsExist(mysqli $conn, string $table, array $columns): void {
+  static $checkedTables = [];
+
+  // Caché: solo verificar cada tabla una vez por request
+  if (isset($checkedTables[$table])) {
+    return;
+  }
+
+  $existingCols = [];
+  if ($result = $conn->query("SHOW COLUMNS FROM `$table`")) {
+    while ($row = $result->fetch_assoc()) {
+      $existingCols[$row['Field']] = true;
+    }
+    $result->close();
+  }
+
+  foreach ($columns as $colName => $colDef) {
+    if (!isset($existingCols[$colName])) {
+      $conn->query("ALTER TABLE `$table` ADD COLUMN $colDef");
+    }
+  }
+
+  $checkedTables[$table] = true;
 }
 
+// Verificar y agregar columnas faltantes en empleados
+suaEnsureColumnsExist($conn, 'empleados', [
+  'bloqueado' => 'bloqueado TINYINT(1) NOT NULL DEFAULT 0',
+  'nss' => 'nss VARCHAR(25) NULL',
+  'curp' => 'curp VARCHAR(25) NULL',
+  'empresa' => 'empresa VARCHAR(50) NULL'
+]);
+
+// Agregar índices para mejorar rendimiento de consultas frecuentes
+$conn->query("CREATE INDEX IF NOT EXISTS idx_empleados_nss ON empleados(nss)");
+$conn->query("CREATE INDEX IF NOT EXISTS idx_empleados_bloqueado ON empleados(bloqueado)");
+$conn->query("CREATE INDEX IF NOT EXISTS idx_empleados_activo ON empleados(activo)");
+
+// Verificar y agregar columnas faltantes en sua_empleados
+suaEnsureColumnsExist($conn, 'sua_empleados', [
+  'empresa' => 'empresa VARCHAR(50) NULL'
+]);
+
+// Verificar y agregar columnas faltantes en users
+suaEnsureColumnsExist($conn, 'users', [
+  'password_visible' => 'password_visible VARCHAR(191) NULL AFTER password'
+]);
+
+// Crear tabla de anexos para almacenar PDFs adicionales con fecha
+$conn->query("CREATE TABLE IF NOT EXISTS sua_anexos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  archivo VARCHAR(255) NOT NULL,
+  fecha_anexo DATE NOT NULL,
+  nombre_original VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_by INT DEFAULT NULL,
+  INDEX idx_fecha (fecha_anexo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
 $mensaje=''; $error=''; $lote_id=null; $empleados_extraidos=[]; $fecha_proceso=null; $faltantes=[]; $proyectos=[]; $credenciales_generadas=[];
+$mensaje_anexo=''; $error_anexo='';
+
+// Procesar subida de anexo PDF
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['subir_anexo']) && isset($_FILES['anexo_pdf'])) {
+  $fecha_anexo = isset($_POST['fecha_anexo']) ? trim($_POST['fecha_anexo']) : '';
+
+  if (empty($fecha_anexo)) {
+    $error_anexo = 'Debe seleccionar una fecha para el anexo.';
+  } elseif ($_FILES['anexo_pdf']['error'] === UPLOAD_ERR_OK) {
+    $tmp = $_FILES['anexo_pdf']['tmp_name'];
+    $nombre_original = basename($_FILES['anexo_pdf']['name']);
+    $ext = strtolower(pathinfo($nombre_original, PATHINFO_EXTENSION));
+
+    if ($ext !== 'pdf') {
+      $error_anexo = 'Solo se permiten archivos PDF.';
+    } else {
+      $uploadDir = __DIR__ . '/../uploads/sua_anexos/';
+      if (!is_dir($uploadDir)) {
+        mkdir($uploadDir, 0755, true);
+      }
+
+      $timestamp = time();
+      $nombreArchivo = 'anexo_' . date('Ymd_His', $timestamp) . '_' . uniqid() . '.pdf';
+      $rutaDestino = $uploadDir . $nombreArchivo;
+
+      if (move_uploaded_file($tmp, $rutaDestino)) {
+        $userId = $_SESSION['user_id'] ?? null;
+        $stmt = $conn->prepare('INSERT INTO sua_anexos (archivo, fecha_anexo, nombre_original, created_by) VALUES (?, ?, ?, ?)');
+        if ($stmt) {
+          $stmt->bind_param('sssi', $nombreArchivo, $fecha_anexo, $nombre_original, $userId);
+          if ($stmt->execute()) {
+            $mensaje_anexo = 'Anexo subido exitosamente con fecha ' . date('d/m/Y', strtotime($fecha_anexo)) . '.';
+          } else {
+            $error_anexo = 'Error al registrar el anexo en la base de datos.';
+            @unlink($rutaDestino);
+          }
+          $stmt->close();
+        } else {
+          $error_anexo = 'Error al preparar la consulta.';
+          @unlink($rutaDestino);
+        }
+      } else {
+        $error_anexo = 'Error al mover el archivo al directorio de destino.';
+      }
+    }
+  } else {
+    $error_anexo = 'Error al subir el archivo. Código: ' . $_FILES['anexo_pdf']['error'];
+  }
+}
+
+// Eliminar anexos seleccionados (optimizado para evitar N+1)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['eliminar_anexos']) && isset($_POST['anexo_ids'])) {
+  $anexo_ids = array_map('intval', $_POST['anexo_ids']);
+  $anexo_ids = array_filter($anexo_ids, function($id) { return $id > 0; });
+
+  if (!empty($anexo_ids)) {
+    $uploadDir = __DIR__ . '/../uploads/sua_anexos/';
+
+    // Obtener todos los archivos en una sola consulta
+    $placeholders = implode(',', array_fill(0, count($anexo_ids), '?'));
+    $stmt = $conn->prepare("SELECT archivo FROM sua_anexos WHERE id IN ($placeholders)");
+    if ($stmt) {
+      $types = str_repeat('i', count($anexo_ids));
+      $stmt->bind_param($types, ...$anexo_ids);
+      $stmt->execute();
+      $result = $stmt->get_result();
+
+      // Eliminar archivos físicos
+      while ($row = $result->fetch_assoc()) {
+        $rutaArchivo = $uploadDir . $row['archivo'];
+        if (file_exists($rutaArchivo)) {
+          @unlink($rutaArchivo);
+        }
+      }
+      $stmt->close();
+    }
+
+    // Eliminar registros de base de datos en una sola consulta
+    $stmt = $conn->prepare("DELETE FROM sua_anexos WHERE id IN ($placeholders)");
+    if ($stmt) {
+      $stmt->bind_param($types, ...$anexo_ids);
+      $stmt->execute();
+      $stmt->close();
+    }
+
+    $mensaje_anexo = 'Anexos eliminados exitosamente.';
+  }
+}
+
 // Guardar empresa seleccionada en la sesión y en los empleados extraídos
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_autorizados'])) {
   $empresa = isset($_POST['empresa_sua']) ? trim($_POST['empresa_sua']) : '';
@@ -578,7 +711,14 @@ function extraerEmpleados($texto){
 
 if(isset($_GET['action']) && $_GET['action']==='unblock' && isset($_GET['id'])){
     $id=(int)$_GET['id'];
-    $conn->query("UPDATE empleados SET bloqueado=0 WHERE id=$id");
+    if($id > 0){
+        $stmt = $conn->prepare("UPDATE empleados SET bloqueado=0 WHERE id=?");
+        if($stmt){
+            $stmt->bind_param('i', $id);
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
     header('Location: procesar_sua_auto.php?unblocked=1'); exit;
 }
 
@@ -651,8 +791,9 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['guardar_autorizados'])){
       $sel = $conn->prepare('SELECT id FROM empleados WHERE nss=? LIMIT 1');
       $sel->bind_param('s',$nss); $sel->execute(); $row=$sel->get_result()->fetch_assoc();
       if($row){
-        $up=$conn->prepare('UPDATE empleados SET nombre=?, curp=?, puesto="Servicio Especializado", bloqueado=0, activo=1 WHERE id=?');
-        $up->bind_param('ssi',$nombre,$curp,$row['id']);
+        $empresaEmpleado = $e['empresa'] ?? '';
+        $up=$conn->prepare('UPDATE empleados SET nombre=?, curp=?, empresa=?, puesto="Servicio Especializado", bloqueado=0, activo=1 WHERE id=?');
+        $up->bind_param('sssi',$nombre,$curp,$empresaEmpleado,$row['id']);
         $up->execute();
         $actualizados++;
       } else {
@@ -689,31 +830,70 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['guardar_autorizados'])){
         suaRegistrarCredencial($conn, $credenciales_generadas, (int)$row['id'], $nombre);
       }
     }
-    // Bloquear y desasignar empleados de la empresa que no estén en el SUA
+
+    // Bloquear y desasignar automáticamente empleados de la empresa que no estén en el SUA
     $empresaSeleccionada = isset($_POST['empresa_sua']) ? trim($_POST['empresa_sua']) : '';
+    $totalBloqueados = 0;
+
     if ($empresaSeleccionada && !empty($nssSUA)) {
-      // Buscar empleados activos de esa empresa que no estén en el SUA
-      $sqlBloquear = "SELECT id FROM empleados WHERE empresa = ? AND activo = 1 AND bloqueado = 0 AND nss NOT IN (" . implode(',', array_fill(0, count($nssSUA), '?')) . ")";
+      // Buscar empleados activos de esa empresa que no estén en el SUA actual
+      $placeholders = implode(',', array_fill(0, count($nssSUA), '?'));
+      $sqlBloquear = "SELECT id, nombre FROM empleados WHERE empresa = ? AND activo = 1 AND bloqueado = 0 AND nss IS NOT NULL AND nss <> '' AND nss NOT IN ($placeholders)";
+
       $params = array_merge([$empresaSeleccionada], $nssSUA);
       $types = str_repeat('s', count($params));
+
       $stmtBloquear = $conn->prepare($sqlBloquear);
-      $stmtBloquear->bind_param($types, ...$params);
-      $stmtBloquear->execute();
-      $resultBloquear = $stmtBloquear->get_result();
-      $idsBloquear = [];
-      while ($row = $resultBloquear->fetch_assoc()) {
-        $idsBloquear[] = (int)$row['id'];
-      }
-      $stmtBloquear->close();
-      // Bloquear y desasignar
-      foreach ($idsBloquear as $idEmp) {
-        $conn->query("UPDATE empleados SET bloqueado = 1, activo = 0 WHERE id = " . $idEmp);
-        $conn->query("UPDATE empleado_proyecto SET activo = 0 WHERE empleado_id = " . $idEmp);
-        $conn->query("UPDATE empleado_asignaciones SET status = 'finalizado' WHERE empleado_id = " . $idEmp . " AND status <> 'finalizado'");
+      if ($stmtBloquear) {
+        $stmtBloquear->bind_param($types, ...$params);
+        $stmtBloquear->execute();
+        $resultBloquear = $stmtBloquear->get_result();
+
+        $idsBloquear = [];
+        while ($row = $resultBloquear->fetch_assoc()) {
+          $idsBloquear[] = (int)$row['id'];
+        }
+        $stmtBloquear->close();
+
+        // Bloquear y desasignar en lote (optimizado para evitar N+1)
+        if (!empty($idsBloquear)) {
+          $placeholdersIds = implode(',', array_fill(0, count($idsBloquear), '?'));
+          $typesIds = str_repeat('i', count($idsBloquear));
+
+          // 1. Bloquear empleados y marcarlos como inactivos
+          $stmtBloquearEmpleados = $conn->prepare("UPDATE empleados SET bloqueado = 1, activo = 0 WHERE id IN ($placeholdersIds)");
+          if ($stmtBloquearEmpleados) {
+            $stmtBloquearEmpleados->bind_param($typesIds, ...$idsBloquear);
+            $stmtBloquearEmpleados->execute();
+            $totalBloqueados = $stmtBloquearEmpleados->affected_rows;
+            $stmtBloquearEmpleados->close();
+          }
+
+          // 2. Desasignar de todos los proyectos
+          $stmtDesasignar = $conn->prepare("UPDATE empleado_proyecto SET activo = 0 WHERE empleado_id IN ($placeholdersIds)");
+          if ($stmtDesasignar) {
+            $stmtDesasignar->bind_param($typesIds, ...$idsBloquear);
+            $stmtDesasignar->execute();
+            $stmtDesasignar->close();
+          }
+
+          // 3. Finalizar asignaciones programadas/activas
+          $stmtFinalizarAsignaciones = $conn->prepare("UPDATE empleado_asignaciones SET status = 'finalizado' WHERE empleado_id IN ($placeholdersIds) AND status <> 'finalizado'");
+          if ($stmtFinalizarAsignaciones) {
+            $stmtFinalizarAsignaciones->bind_param($typesIds, ...$idsBloquear);
+            $stmtFinalizarAsignaciones->execute();
+            $stmtFinalizarAsignaciones->close();
+          }
+        }
       }
     }
+
     $total = count($empleados_extraidos);
-    $mensaje="Lista de autorizados guardada. Actualizados: $actualizados, creados: $creados, total procesados: $total.";
+    $mensajeBase = "Lista de autorizados guardada. Actualizados: $actualizados, creados: $creados, total procesados: $total.";
+    if ($totalBloqueados > 0 && $empresaSeleccionada) {
+      $mensajeBase .= " Bloqueados automáticamente de $empresaSeleccionada: $totalBloqueados.";
+    }
+    $mensaje = $mensajeBase;
   }
 }
 
@@ -833,6 +1013,9 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_FILES['sua_pdf']) && (!isset($
 
 // Listado de últimos lotes
 $lotes=$conn->query("SELECT * FROM sua_lotes ORDER BY id DESC LIMIT 20");
+
+// Listado de anexos
+$anexos=$conn->query("SELECT * FROM sua_anexos ORDER BY fecha_anexo DESC, id DESC LIMIT 50");
 
 // Calcular faltantes (no renovados) respecto a empleados activos actuales
 if($empleados_extraidos){
@@ -1362,6 +1545,94 @@ th {
       <?php endif; ?>
     </div>
 
+    <!-- Nuevo Panel de Anexos -->
+    <div class="panel">
+      <h2 class="section-title">
+          <i class="fas fa-paperclip"></i>
+          Anexos
+          <span style="font-size:14px;font-weight:400;color:#64748b;">(PDFs adicionales con fecha)</span>
+      </h2>
+
+      <?php if($mensaje_anexo): ?>
+        <div class="alert alert-success">
+            <i class="fas fa-check-circle"></i>
+            <?= htmlspecialchars($mensaje_anexo) ?>
+        </div>
+      <?php endif; ?>
+      <?php if($error_anexo): ?>
+        <div class="alert alert-error">
+            <i class="fas fa-exclamation-circle"></i>
+            <?= htmlspecialchars($error_anexo) ?>
+        </div>
+      <?php endif; ?>
+
+      <form class="upload" method="post" enctype="multipart/form-data" style="margin-bottom:32px;">
+        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;">
+          <div style="flex:1;min-width:200px;">
+            <label class="form-label" for="fecha_anexo">Fecha del Anexo</label>
+            <input type="date" name="fecha_anexo" id="fecha_anexo" value="<?= htmlspecialchars(date('Y-m-d')) ?>" required style="width:100%;padding:10px;border-radius:10px;border:1px solid #cbd5e1;">
+          </div>
+          <div style="flex:2;min-width:250px;">
+            <label class="form-label" for="anexo_pdf">Archivo PDF</label>
+            <input type="file" name="anexo_pdf" id="anexo_pdf" accept="application/pdf" required>
+          </div>
+          <button type="submit" name="subir_anexo" class="btn-primary" title="Subir Anexo PDF">
+              <i class="fas fa-upload"></i>
+              Subir Anexo
+          </button>
+        </div>
+      </form>
+
+      <h3 class="section-title" style="font-size:16px;margin-top:24px;">
+          <i class="fas fa-list"></i>
+          Anexos Registrados
+      </h3>
+
+      <form method="post" onsubmit="return confirm('¿Eliminar los anexos seleccionados? Esta acción no se puede deshacer.');">
+        <input type="hidden" name="eliminar_anexos" value="1">
+        <div class="mini-table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:60px;"><input type="checkbox" id="chk_all_anexos" onclick="toggleAllAnexos(this)"></th>
+                <th>Fecha del Anexo</th>
+                <th>Archivo Original</th>
+                <th>Fecha de Subida</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php if($anexos && $anexos->num_rows): while($anexo=$anexos->fetch_assoc()): ?>
+                <tr>
+                  <td style="text-align:center;">
+                    <input type="checkbox" name="anexo_ids[]" value="<?= (int)$anexo['id'] ?>" title="Anexo #<?= (int)$anexo['id'] ?>">
+                  </td>
+                  <td><?= htmlspecialchars(date('d/m/Y', strtotime($anexo['fecha_anexo']))) ?></td>
+                  <td><?= htmlspecialchars($anexo['nombre_original']) ?></td>
+                  <td><?= htmlspecialchars(date('d/m/Y H:i', strtotime($anexo['created_at']))) ?></td>
+                  <td>
+                    <a href="../uploads/sua_anexos/<?= urlencode($anexo['archivo']) ?>" target="_blank" class="btn-secondary" style="padding:6px 12px;font-size:13px;text-decoration:none;">
+                      <i class="fas fa-eye"></i> Ver PDF
+                    </a>
+                  </td>
+                </tr>
+              <?php endwhile; else: ?>
+                <tr><td colspan="5" style="text-align:center;color:#64748b;padding:32px;">No hay anexos registrados</td></tr>
+              <?php endif; ?>
+            </tbody>
+          </table>
+        </div>
+        <?php if($anexos && $anexos->num_rows): ?>
+        <div style="margin-top:24px;display:flex;justify-content:flex-start;">
+          <button type="submit" class="btn-danger">
+              <i class="fas fa-trash"></i>
+              Eliminar Seleccionados
+          </button>
+        </div>
+        <?php endif; ?>
+      </form>
+    </div>
+
     <div class="panel">
         <h2 class="section-title">
             <i class="fas fa-file-pdf"></i>
@@ -1608,6 +1879,10 @@ th {
 <script>
 function toggleAllLotes(master){
   const checks=document.querySelectorAll('input[name="lote_ids[]"]');
+  checks.forEach(c=>c.checked=master.checked);
+}
+function toggleAllAnexos(master){
+  const checks=document.querySelectorAll('input[name="anexo_ids[]"]');
   checks.forEach(c=>c.checked=master.checked);
 }
 function toggleManual(){

@@ -4,8 +4,8 @@ require_once __DIR__ . '/includes/admin_init.php';
 $proyectoId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 if ($proyectoId <= 0) {
 	$_SESSION['flash_error'] = 'Proyecto no válido.';
-									$isHighlighted = $selectedEmployeeId > 0 && $assignmentEmployeeId === $selectedEmployeeId;
-									$rowClassAttr = $isHighlighted ? ' class="row-highlight"' : '';
+	header('Location: proyectos.php');
+	exit;
 }
 
 $proyecto = null;
@@ -345,7 +345,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $assignments = [];
 if ($stmtAssignments = $conn->prepare('SELECT ea.id, ea.empleado_id, ea.fecha_inicio, ea.fecha_fin, ea.status,
-		e.nombre, e.telefono, e.nss, e.puesto,
+		e.nombre, e.telefono, e.nss, e.puesto, e.empresa,
 		u.email
 	FROM empleado_asignaciones ea
 	JOIN empleados e ON e.id = ea.empleado_id
@@ -401,6 +401,7 @@ SELECT e.id,
 	e.telefono,
 	e.nss,
 	e.puesto,
+	e.empresa,
 	GROUP_CONCAT(DISTINCT CASE WHEN ep.activo = 1 THEN g.nombre END ORDER BY g.nombre SEPARATOR ', ') AS proyectos_activos,
 	MAX(CASE WHEN ep.activo = 1 THEN ep.proyecto_id END) AS proyecto_activo_id,
 	MIN(CASE WHEN ea.status = 'programado' AND ea.fecha_inicio >= CURDATE() THEN CONCAT(ea.fecha_inicio, '|', ea.fecha_fin, '|', g2.nombre) END) AS proximo_periodo,

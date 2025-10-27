@@ -240,6 +240,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion_asistencia']))
         $fecha_captura_dt = new DateTimeImmutable('now', $tzMx);
     }
 
+    // Validación de sincronización de hora (Seguridad anti-manipulación)
+    $hora_servidor = new DateTimeImmutable('now', $tzMx);
+    $diferencia_segundos = abs($fecha_captura_dt->getTimestamp() - $hora_servidor->getTimestamp());
+    $margen_permitido = 300; // 5 minutos de margen
+
+    if ($diferencia_segundos > $margen_permitido) {
+        $diferencia_minutos = round($diferencia_segundos / 60);
+        $adelanto_atraso = $fecha_captura_dt->getTimestamp() > $hora_servidor->getTimestamp() ? 'adelantada' : 'atrasada';
+
+        $mensaje_error = "🚫 Hora del dispositivo no sincronizada. Tu hora está {$adelanto_atraso} por {$diferencia_minutos} minutos. Por favor, sincroniza la hora de tu celular con la red automática y vuelve a intentar.";
+
+        // No procesar la asistencia
+        $_SERVER['REQUEST_METHOD'] = 'GET';
+    } else {
+        // Hora sincronizada correctamente, usar hora del servidor para mayor precisión
+        $fecha_captura_dt = $hora_servidor;
+    }
+
     $fecha_captura_str = $fecha_captura_dt->format('Y-m-d H:i:s');
     $fecha_captura_fecha = $fecha_captura_dt->format('Y-m-d');
     $dia_operativo = $fecha_captura_fecha;
@@ -802,6 +820,24 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
         <div class="welcome-banner">
             <h2>¡Hola, <?php echo htmlspecialchars(explode(' ', $user_name)[0]); ?>!</h2>
             <p>Registra tu asistencia diaria y mantente al día con tu proyecto</p>
+        </div>
+
+        <!-- Indicador de hora del servidor (seguridad) -->
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 20px; border-radius: 12px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <i class="fas fa-clock" style="font-size: 18px;"></i>
+            <div style="flex: 1;">
+                <div style="font-weight: 600; font-size: 14px;">Hora del servidor (México):</div>
+                <div id="hora-servidor" style="font-size: 20px; font-weight: 700; letter-spacing: 1px;">
+                    <?php
+                        $tzMx = new DateTimeZone('America/Mexico_City');
+                        $ahora = new DateTimeImmutable('now', $tzMx);
+                        echo $ahora->format('H:i:s');
+                    ?>
+                </div>
+            </div>
+            <div style="font-size: 11px; opacity: 0.9; max-width: 150px; line-height: 1.3;">
+                <i class="fas fa-shield-alt"></i> Sistema con validación anti-manipulación de hora
+            </div>
         </div>
 
         <?php if ($mensaje_exito): ?>
@@ -1448,6 +1484,39 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
                 } catch(err){ target.textContent='00:00:00'; }
             }
             calc(); setInterval(calc,1000);
+        })();
+    </script>
+
+    <!-- Script para actualizar reloj del servidor en tiempo real -->
+    <script>
+        (function() {
+            const horaDisplay = document.getElementById('hora-servidor');
+            if (!horaDisplay) return;
+
+            // Obtener hora inicial del servidor desde PHP
+            const horaInicial = horaDisplay.textContent.trim();
+            const [h, m, s] = horaInicial.split(':').map(Number);
+
+            // Crear fecha base con la hora del servidor
+            let segundosServidor = h * 3600 + m * 60 + s;
+
+            function actualizarReloj() {
+                segundosServidor++;
+
+                const horas = Math.floor(segundosServidor / 3600) % 24;
+                const minutos = Math.floor((segundosServidor % 3600) / 60);
+                const segundos = segundosServidor % 60;
+
+                const horaFormateada =
+                    String(horas).padStart(2, '0') + ':' +
+                    String(minutos).padStart(2, '0') + ':' +
+                    String(segundos).padStart(2, '0');
+
+                horaDisplay.textContent = horaFormateada;
+            }
+
+            // Actualizar cada segundo
+            setInterval(actualizarReloj, 1000);
         })();
     </script>
 </body>
