@@ -791,8 +791,9 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['guardar_autorizados'])){
       $sel = $conn->prepare('SELECT id FROM empleados WHERE nss=? LIMIT 1');
       $sel->bind_param('s',$nss); $sel->execute(); $row=$sel->get_result()->fetch_assoc();
       if($row){
-        $up=$conn->prepare('UPDATE empleados SET nombre=?, curp=?, puesto="Servicio Especializado", bloqueado=0, activo=1 WHERE id=?');
-        $up->bind_param('ssi',$nombre,$curp,$row['id']);
+        $empresaEmpleado = $e['empresa'] ?? '';
+        $up=$conn->prepare('UPDATE empleados SET nombre=?, curp=?, empresa=?, puesto="Servicio Especializado", bloqueado=0, activo=1 WHERE id=?');
+        $up->bind_param('sssi',$nombre,$curp,$empresaEmpleado,$row['id']);
         $up->execute();
         $actualizados++;
       } else {
@@ -829,31 +830,70 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['guardar_autorizados'])){
         suaRegistrarCredencial($conn, $credenciales_generadas, (int)$row['id'], $nombre);
       }
     }
-    // Bloquear y desasignar empleados de la empresa que no estén en el SUA
+
+    // Bloquear y desasignar automáticamente empleados de la empresa que no estén en el SUA
     $empresaSeleccionada = isset($_POST['empresa_sua']) ? trim($_POST['empresa_sua']) : '';
+    $totalBloqueados = 0;
+
     if ($empresaSeleccionada && !empty($nssSUA)) {
-      // Buscar empleados activos de esa empresa que no estén en el SUA
-      $sqlBloquear = "SELECT id FROM empleados WHERE empresa = ? AND activo = 1 AND bloqueado = 0 AND nss NOT IN (" . implode(',', array_fill(0, count($nssSUA), '?')) . ")";
+      // Buscar empleados activos de esa empresa que no estén en el SUA actual
+      $placeholders = implode(',', array_fill(0, count($nssSUA), '?'));
+      $sqlBloquear = "SELECT id, nombre FROM empleados WHERE empresa = ? AND activo = 1 AND bloqueado = 0 AND nss IS NOT NULL AND nss <> '' AND nss NOT IN ($placeholders)";
+
       $params = array_merge([$empresaSeleccionada], $nssSUA);
       $types = str_repeat('s', count($params));
+
       $stmtBloquear = $conn->prepare($sqlBloquear);
-      $stmtBloquear->bind_param($types, ...$params);
-      $stmtBloquear->execute();
-      $resultBloquear = $stmtBloquear->get_result();
-      $idsBloquear = [];
-      while ($row = $resultBloquear->fetch_assoc()) {
-        $idsBloquear[] = (int)$row['id'];
-      }
-      $stmtBloquear->close();
-      // Bloquear y desasignar
-      foreach ($idsBloquear as $idEmp) {
-        $conn->query("UPDATE empleados SET bloqueado = 1, activo = 0 WHERE id = " . $idEmp);
-        $conn->query("UPDATE empleado_proyecto SET activo = 0 WHERE empleado_id = " . $idEmp);
-        $conn->query("UPDATE empleado_asignaciones SET status = 'finalizado' WHERE empleado_id = " . $idEmp . " AND status <> 'finalizado'");
+      if ($stmtBloquear) {
+        $stmtBloquear->bind_param($types, ...$params);
+        $stmtBloquear->execute();
+        $resultBloquear = $stmtBloquear->get_result();
+
+        $idsBloquear = [];
+        while ($row = $resultBloquear->fetch_assoc()) {
+          $idsBloquear[] = (int)$row['id'];
+        }
+        $stmtBloquear->close();
+
+        // Bloquear y desasignar en lote (optimizado para evitar N+1)
+        if (!empty($idsBloquear)) {
+          $placeholdersIds = implode(',', array_fill(0, count($idsBloquear), '?'));
+          $typesIds = str_repeat('i', count($idsBloquear));
+
+          // 1. Bloquear empleados y marcarlos como inactivos
+          $stmtBloquearEmpleados = $conn->prepare("UPDATE empleados SET bloqueado = 1, activo = 0 WHERE id IN ($placeholdersIds)");
+          if ($stmtBloquearEmpleados) {
+            $stmtBloquearEmpleados->bind_param($typesIds, ...$idsBloquear);
+            $stmtBloquearEmpleados->execute();
+            $totalBloqueados = $stmtBloquearEmpleados->affected_rows;
+            $stmtBloquearEmpleados->close();
+          }
+
+          // 2. Desasignar de todos los proyectos
+          $stmtDesasignar = $conn->prepare("UPDATE empleado_proyecto SET activo = 0 WHERE empleado_id IN ($placeholdersIds)");
+          if ($stmtDesasignar) {
+            $stmtDesasignar->bind_param($typesIds, ...$idsBloquear);
+            $stmtDesasignar->execute();
+            $stmtDesasignar->close();
+          }
+
+          // 3. Finalizar asignaciones programadas/activas
+          $stmtFinalizarAsignaciones = $conn->prepare("UPDATE empleado_asignaciones SET status = 'finalizado' WHERE empleado_id IN ($placeholdersIds) AND status <> 'finalizado'");
+          if ($stmtFinalizarAsignaciones) {
+            $stmtFinalizarAsignaciones->bind_param($typesIds, ...$idsBloquear);
+            $stmtFinalizarAsignaciones->execute();
+            $stmtFinalizarAsignaciones->close();
+          }
+        }
       }
     }
+
     $total = count($empleados_extraidos);
-    $mensaje="Lista de autorizados guardada. Actualizados: $actualizados, creados: $creados, total procesados: $total.";
+    $mensajeBase = "Lista de autorizados guardada. Actualizados: $actualizados, creados: $creados, total procesados: $total.";
+    if ($totalBloqueados > 0 && $empresaSeleccionada) {
+      $mensajeBase .= " Bloqueados automáticamente de $empresaSeleccionada: $totalBloqueados.";
+    }
+    $mensaje = $mensajeBase;
   }
 }
 
