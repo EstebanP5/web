@@ -31,6 +31,7 @@ $values = [
     'nss' => '',
     'curp' => '',
     'email' => '',
+    'empresa' => '',
     'proyecto_id' => 0,
 ];
 
@@ -42,6 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $values['nss'] = trim($_POST['nss'] ?? '');
     $values['curp'] = trim($_POST['curp'] ?? '');
     $values['email'] = trim($_POST['email'] ?? '');
+    $values['empresa'] = trim($_POST['empresa'] ?? '');
     $password = trim($_POST['password'] ?? '');
     $passwordConfirm = trim($_POST['password_confirm'] ?? '');
     $values['proyecto_id'] = isset($_POST['proyecto_id']) && ctype_digit((string)$_POST['proyecto_id']) ? (int)$_POST['proyecto_id'] : 0;
@@ -59,6 +61,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if ($values['curp'] === '') {
         $errors[] = 'La CURP es obligatoria.';
+    }
+    if ($values['empresa'] === '' || !in_array($values['empresa'], ['ErgoSolar', 'Stone', 'Remedios'], true)) {
+        $errors[] = 'Selecciona una empresa válida.';
     }
     if ($values['email'] === '' || !filter_var($values['email'], FILTER_VALIDATE_EMAIL)) {
         $errors[] = 'Proporciona un correo electrónico válido.';
@@ -145,12 +150,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $userId = (int)$conn->insert_id;
             $stmtUser->close();
 
-            $puesto = 'Servicio Especializado';
-            $stmtEmployee = $conn->prepare('INSERT INTO empleados (id, nombre, telefono, nss, curp, puesto, activo, fecha_registro) VALUES (?, ?, ?, ?, ?, ?, 1, NOW())');
+            $stmtEmployee = $conn->prepare('INSERT INTO empleados (id, nombre, telefono, nss, curp, empresa, activo, fecha_registro) VALUES (?, ?, ?, ?, ?, ?, 1, NOW())');
             if (!$stmtEmployee) {
                 throw new RuntimeException('No se pudo preparar la creación del Servicio Especializado.');
             }
-            $stmtEmployee->bind_param('isssss', $userId, $values['nombre'], $values['telefono'], $values['nss'], $values['curp'], $puesto);
+            $stmtEmployee->bind_param('isssss', $userId, $values['nombre'], $values['telefono'], $values['nss'], $values['curp'], $values['empresa']);
             if (!$stmtEmployee->execute()) {
                 throw new RuntimeException('No se pudo guardar el Servicio Especializado.');
             }
@@ -441,6 +445,15 @@ $pmCssVersion = file_exists($pmCssPath) ? filemtime($pmCssPath) : time();
             <div>
                 <label for="curp">CURP *</label>
                 <input type="text" id="curp" name="curp" required value="<?= htmlspecialchars($values['curp'], ENT_QUOTES, 'UTF-8'); ?>" placeholder="18 caracteres" />
+            </div>
+            <div class="full-row">
+                <label for="empresa">Empresa *</label>
+                <select id="empresa" name="empresa" required>
+                    <option value="">Selecciona una empresa</option>
+                    <option value="ErgoSolar" <?= $values['empresa'] === 'ErgoSolar' ? 'selected' : ''; ?>>ErgoSolar</option>
+                    <option value="Stone" <?= $values['empresa'] === 'Stone' ? 'selected' : ''; ?>>Stone</option>
+                    <option value="Remedios" <?= $values['empresa'] === 'Remedios' ? 'selected' : ''; ?>>Remedios</option>
+                </select>
             </div>
             <div class="full-row">
                 <label for="email">Correo electrónico *</label>

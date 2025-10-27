@@ -61,7 +61,7 @@ if (!$hasAccess) {
 
 $employee = null;
 $userRow = null;
-if ($stmtEmployee = $conn->prepare('SELECT e.id, e.nombre, e.telefono, e.nss, e.curp, e.activo, u.email, u.password_visible FROM empleados e LEFT JOIN users u ON u.id = e.id WHERE e.id = ? LIMIT 1')) {
+if ($stmtEmployee = $conn->prepare('SELECT e.id, e.nombre, e.telefono, e.nss, e.curp, e.empresa, e.activo, u.email, u.password_visible FROM empleados e LEFT JOIN users u ON u.id = e.id WHERE e.id = ? LIMIT 1')) {
     $stmtEmployee->bind_param('i', $employeeId);
     if ($stmtEmployee->execute()) {
         $resultEmployee = $stmtEmployee->get_result();
@@ -90,6 +90,7 @@ $values = [
     'telefono' => trim((string)$employee['telefono']),
     'nss' => trim((string)($employee['nss'] ?? '')),
     'curp' => trim((string)($employee['curp'] ?? '')),
+    'empresa' => trim((string)($employee['empresa'] ?? '')),
     'email' => trim((string)($employee['email'] ?? '')),
 ];
 
@@ -100,6 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $values['telefono'] = trim($_POST['telefono'] ?? '');
     $values['nss'] = trim($_POST['nss'] ?? '');
     $values['curp'] = trim($_POST['curp'] ?? '');
+    $values['empresa'] = trim($_POST['empresa'] ?? '');
     $values['email'] = trim($_POST['email'] ?? '');
     $password = trim($_POST['password'] ?? '');
     $passwordConfirm = trim($_POST['password_confirm'] ?? '');
@@ -117,6 +119,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if ($values['curp'] === '') {
         $errors[] = 'La CURP es obligatoria.';
+    }
+    if ($values['empresa'] === '' || !in_array($values['empresa'], ['ErgoSolar', 'Stone', 'Remedios'], true)) {
+        $errors[] = 'Selecciona una empresa válida.';
     }
 
     if ($values['email'] !== '' && !filter_var($values['email'], FILTER_VALIDATE_EMAIL)) {
@@ -166,11 +171,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $conn->begin_transaction();
         try {
-            $stmtUpdate = $conn->prepare('UPDATE empleados SET nombre = ?, telefono = ?, nss = ?, curp = ? WHERE id = ?');
+            $stmtUpdate = $conn->prepare('UPDATE empleados SET nombre = ?, telefono = ?, nss = ?, curp = ?, empresa = ? WHERE id = ?');
             if (!$stmtUpdate) {
                 throw new RuntimeException('No se pudo preparar la actualización del Servicio Especializado.');
             }
-            $stmtUpdate->bind_param('ssssi', $values['nombre'], $values['telefono'], $values['nss'], $values['curp'], $employeeId);
+            $stmtUpdate->bind_param('sssssi', $values['nombre'], $values['telefono'], $values['nss'], $values['curp'], $values['empresa'], $employeeId);
             if (!$stmtUpdate->execute()) {
                 $stmtUpdate->close();
                 throw new RuntimeException('No se pudo actualizar la información del Servicio Especializado.');
@@ -228,6 +233,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $employee['telefono'] = $values['telefono'];
             $employee['nss'] = $values['nss'];
             $employee['curp'] = $values['curp'];
+            $employee['empresa'] = $values['empresa'];
             $employee['email'] = $values['email'];
             if ($values['email'] !== '') {
                 $userRow = ['email' => $values['email'], 'password_visible' => $password !== '' ? $password : ($employee['password_visible'] ?? '')];
@@ -327,7 +333,7 @@ $pmCssVersion = file_exists($pmCssPath) ? filemtime($pmCssPath) : time();
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
-        input {
+        input, select {
             width: 100%;
             padding: 14px 16px;
             border-radius: 12px;
@@ -337,7 +343,7 @@ $pmCssVersion = file_exists($pmCssPath) ? filemtime($pmCssPath) : time();
             color: #0f172a;
             transition: all 0.2s ease;
         }
-        input:focus {
+        input:focus, select:focus {
             outline: none;
             border-color: #10b981;
             background: #ffffff;
@@ -421,6 +427,15 @@ $pmCssVersion = file_exists($pmCssPath) ? filemtime($pmCssPath) : time();
             <div>
                 <label for="curp">CURP *</label>
                 <input type="text" id="curp" name="curp" required value="<?= htmlspecialchars($values['curp'], ENT_QUOTES, 'UTF-8'); ?>" />
+            </div>
+            <div class="full-row">
+                <label for="empresa">Empresa *</label>
+                <select id="empresa" name="empresa" required>
+                    <option value="">Selecciona una empresa</option>
+                    <option value="ErgoSolar" <?= $values['empresa'] === 'ErgoSolar' ? 'selected' : ''; ?>>ErgoSolar</option>
+                    <option value="Stone" <?= $values['empresa'] === 'Stone' ? 'selected' : ''; ?>>Stone</option>
+                    <option value="Remedios" <?= $values['empresa'] === 'Remedios' ? 'selected' : ''; ?>>Remedios</option>
+                </select>
             </div>
             <div class="full-row">
                 <label for="email">Correo electrónico</label>

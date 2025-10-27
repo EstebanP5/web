@@ -33,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $empleadoId = isset($_POST['empleado_id']) ? (int)$_POST['empleado_id'] : 0;
     $nombre = trim($_POST['nombre'] ?? '');
     $telefono = trim($_POST['telefono'] ?? '');
-    $puesto = $puestoPorDefecto;
+    $empresa = trim($_POST['empresa'] ?? '');
     $nss = trim($_POST['nss'] ?? '');
     $curp = trim($_POST['curp'] ?? '');
     $email = trim($_POST['email'] ?? '');
@@ -46,8 +46,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 admin_servicios_especializados_redirect();
             }
 
-            $stmt = $conn->prepare('UPDATE empleados SET nombre = ?, telefono = ?, puesto = ?, nss = ?, curp = ? WHERE id = ?');
-            if (!$stmt || !$stmt->bind_param('sssssi', $nombre, $telefono, $puesto, $nss, $curp, $empleadoId) || !$stmt->execute()) {
+            if ($empresa === '' || !in_array($empresa, ['ErgoSolar', 'Stone', 'Remedios'], true)) {
+                $_SESSION['flash_error'] = 'Selecciona una empresa válida.';
+                admin_servicios_especializados_redirect();
+            }
+
+            $stmt = $conn->prepare('UPDATE empleados SET nombre = ?, telefono = ?, empresa = ?, nss = ?, curp = ? WHERE id = ?');
+            if (!$stmt || !$stmt->bind_param('sssssi', $nombre, $telefono, $empresa, $nss, $curp, $empleadoId) || !$stmt->execute()) {
                 $_SESSION['flash_error'] = 'No se pudo actualizar al Servicio Especializado.';
                 admin_servicios_especializados_redirect();
             }
@@ -745,7 +750,7 @@ include __DIR__ . '/includes/header.php';
                                             data-nombre="<?php echo htmlspecialchars($empleado['nombre'] ?? '', ENT_QUOTES); ?>"
                                             data-telefono="<?php echo htmlspecialchars($empleado['telefono'] ?? '', ENT_QUOTES); ?>"
                                             data-email="<?php echo htmlspecialchars($empleado['email'] ?? '', ENT_QUOTES); ?>"
-                                            data-puesto="<?php echo htmlspecialchars($empleado['puesto'] ?? '', ENT_QUOTES); ?>"
+                                            data-empresa="<?php echo htmlspecialchars($empleado['empresa'] ?? '', ENT_QUOTES); ?>"
                                             data-nss="<?php echo htmlspecialchars($empleado['nss'] ?? '', ENT_QUOTES); ?>"
                                             data-curp="<?php echo htmlspecialchars($empleado['curp'] ?? '', ENT_QUOTES); ?>">
                                         <i class="fas fa-pen"></i> Editar
@@ -805,11 +810,12 @@ include __DIR__ . '/includes/header.php';
                     <input type="tel" id="editarTelefono" name="telefono" class="form-control">
                 </div>
                 <div class="form-group">
-                    <label for="editarPuesto">Puesto</label>
-                    <select id="editarPuesto" name="puesto" class="form-control">
-                        <?php foreach ($puestosOpciones as $valor => $label): ?>
-                            <option value="<?= htmlspecialchars($valor) ?>"><?= htmlspecialchars($label) ?></option>
-                        <?php endforeach; ?>
+                    <label for="editarEmpresa">Empresa *</label>
+                    <select id="editarEmpresa" name="empresa" class="form-control" required>
+                        <option value="">Selecciona una empresa</option>
+                        <option value="ErgoSolar">ErgoSolar</option>
+                        <option value="Stone">Stone</option>
+                        <option value="Remedios">Remedios</option>
                     </select>
                 </div>
             </div>
@@ -928,7 +934,7 @@ window.addEventListener('click', (event) => {
         nombre: document.getElementById('editarNombre'),
         email: document.getElementById('editarEmail'),
         telefono: document.getElementById('editarTelefono'),
-        puesto: document.getElementById('editarPuesto'),
+        empresa: document.getElementById('editarEmpresa'),
         nss: document.getElementById('editarNss'),
         curp: document.getElementById('editarCurp'),
         password: document.getElementById('editarPassword'),
@@ -939,11 +945,11 @@ window.addEventListener('click', (event) => {
             if (editarCampos.nombre) editarCampos.nombre.value = button.dataset.nombre || '';
             if (editarCampos.email) editarCampos.email.value = button.dataset.email || '';
             if (editarCampos.telefono) editarCampos.telefono.value = button.dataset.telefono || '';
-            if (editarCampos.puesto) {
-                const valorPuesto = button.dataset.puesto || '';
-                const opciones = Array.from(editarCampos.puesto.options || []).map((opt) => opt.value);
-                const valorValido = opciones.includes(valorPuesto) ? valorPuesto : '<?php echo htmlspecialchars($puestoPorDefecto) ?>';
-                editarCampos.puesto.value = valorValido;
+            if (editarCampos.empresa) {
+                const valorEmpresa = button.dataset.empresa || '';
+                const opciones = Array.from(editarCampos.empresa.options || []).map((opt) => opt.value);
+                const valorValido = opciones.includes(valorEmpresa) ? valorEmpresa : '';
+                editarCampos.empresa.value = valorValido;
             }
             if (editarCampos.nss) editarCampos.nss.value = button.dataset.nss || '';
             if (editarCampos.curp) editarCampos.curp.value = button.dataset.curp || '';
