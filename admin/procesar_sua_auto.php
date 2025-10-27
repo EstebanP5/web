@@ -224,25 +224,58 @@ function suaEnsureRolColumnSupportsServicioEspecializado(mysqli $conn): void {
 suaEnsureRolColumnSupportsServicioEspecializado($conn);
 
 // Crear tablas si faltan (idempotente básico)
-$conn->query("CREATE TABLE IF NOT EXISTS sua_lotes (id INT AUTO_INCREMENT PRIMARY KEY, fecha_proceso DATE NOT NULL, archivo VARCHAR(255) NOT NULL, total INT NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+$conn->query("CREATE TABLE IF NOT EXISTS sua_lotes (id INT AUTO_INCREMENT PRIMARY KEY, fecha_proceso DATE NOT NULL, archivo VARCHAR(255) NOT NULL, total INT NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, INDEX idx_fecha_proceso (fecha_proceso))");
 $conn->query("CREATE TABLE IF NOT EXISTS sua_empleados (id INT AUTO_INCREMENT PRIMARY KEY, lote_id INT NOT NULL, nss VARCHAR(25) NOT NULL, nombre VARCHAR(150) NOT NULL, curp VARCHAR(25) NOT NULL, UNIQUE KEY uniq_lote_nss (lote_id,nss), CONSTRAINT fk_lote FOREIGN KEY(lote_id) REFERENCES sua_lotes(id) ON DELETE CASCADE)");
-
-$colsEmp = $conn->query("SHOW COLUMNS FROM empleados LIKE 'bloqueado'");
-if(!$colsEmp->num_rows) { $conn->query("ALTER TABLE empleados ADD COLUMN bloqueado TINYINT(1) NOT NULL DEFAULT 0"); }
-$colsNss = $conn->query("SHOW COLUMNS FROM empleados LIKE 'nss'");
-if(!$colsNss->num_rows) { $conn->query("ALTER TABLE empleados ADD COLUMN nss VARCHAR(25) NULL"); }
-$colsCurp = $conn->query("SHOW COLUMNS FROM empleados LIKE 'curp'");
-if(!$colsCurp->num_rows) { $conn->query("ALTER TABLE empleados ADD COLUMN curp VARCHAR(25) NULL"); }
-$colsEmpresaSE = $conn->query("SHOW COLUMNS FROM sua_empleados LIKE 'empresa'");
-if(!$colsEmpresaSE->num_rows) { $conn->query("ALTER TABLE sua_empleados ADD COLUMN empresa VARCHAR(50) NULL"); }
-$colsEmpresaEmp = $conn->query("SHOW COLUMNS FROM empleados LIKE 'empresa'");
-if(!$colsEmpresaEmp->num_rows) { $conn->query("ALTER TABLE empleados ADD COLUMN empresa VARCHAR(50) NULL"); }
 $conn->query("CREATE TABLE IF NOT EXISTS autorizados_mes (fecha DATE NOT NULL, nss VARCHAR(25) NOT NULL, nombre VARCHAR(150) NOT NULL, curp VARCHAR(25) NOT NULL, PRIMARY KEY(fecha,nss))");
 
-$colPwdVisible = $conn->query("SHOW COLUMNS FROM users LIKE 'password_visible'");
-if(!$colPwdVisible->num_rows) {
-  $conn->query("ALTER TABLE users ADD COLUMN password_visible VARCHAR(191) NULL AFTER password");
+// Optimización: Consolidar verificaciones de columnas en una sola consulta por tabla
+function suaEnsureColumnsExist(mysqli $conn, string $table, array $columns): void {
+  static $checkedTables = [];
+
+  // Caché: solo verificar cada tabla una vez por request
+  if (isset($checkedTables[$table])) {
+    return;
+  }
+
+  $existingCols = [];
+  if ($result = $conn->query("SHOW COLUMNS FROM `$table`")) {
+    while ($row = $result->fetch_assoc()) {
+      $existingCols[$row['Field']] = true;
+    }
+    $result->close();
+  }
+
+  foreach ($columns as $colName => $colDef) {
+    if (!isset($existingCols[$colName])) {
+      $conn->query("ALTER TABLE `$table` ADD COLUMN $colDef");
+    }
+  }
+
+  $checkedTables[$table] = true;
 }
+
+// Verificar y agregar columnas faltantes en empleados
+suaEnsureColumnsExist($conn, 'empleados', [
+  'bloqueado' => 'bloqueado TINYINT(1) NOT NULL DEFAULT 0',
+  'nss' => 'nss VARCHAR(25) NULL',
+  'curp' => 'curp VARCHAR(25) NULL',
+  'empresa' => 'empresa VARCHAR(50) NULL'
+]);
+
+// Agregar índices para mejorar rendimiento de consultas frecuentes
+$conn->query("CREATE INDEX IF NOT EXISTS idx_empleados_nss ON empleados(nss)");
+$conn->query("CREATE INDEX IF NOT EXISTS idx_empleados_bloqueado ON empleados(bloqueado)");
+$conn->query("CREATE INDEX IF NOT EXISTS idx_empleados_activo ON empleados(activo)");
+
+// Verificar y agregar columnas faltantes en sua_empleados
+suaEnsureColumnsExist($conn, 'sua_empleados', [
+  'empresa' => 'empresa VARCHAR(50) NULL'
+]);
+
+// Verificar y agregar columnas faltantes en users
+suaEnsureColumnsExist($conn, 'users', [
+  'password_visible' => 'password_visible VARCHAR(191) NULL AFTER password'
+]);
 
 // Crear tabla de anexos para almacenar PDFs adicionales con fecha
 $conn->query("CREATE TABLE IF NOT EXISTS sua_anexos (
@@ -306,38 +339,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['subir_anexo']) && iss
   }
 }
 
-// Eliminar anexos seleccionados
+// Eliminar anexos seleccionados (optimizado para evitar N+1)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['eliminar_anexos']) && isset($_POST['anexo_ids'])) {
-  $anexo_ids = $_POST['anexo_ids'];
-  $uploadDir = __DIR__ . '/../uploads/sua_anexos/';
+  $anexo_ids = array_map('intval', $_POST['anexo_ids']);
+  $anexo_ids = array_filter($anexo_ids, function($id) { return $id > 0; });
 
-  foreach ($anexo_ids as $anexo_id) {
-    $anexo_id = (int)$anexo_id;
-    if ($anexo_id > 0) {
-      $stmt = $conn->prepare('SELECT archivo FROM sua_anexos WHERE id = ? LIMIT 1');
-      if ($stmt) {
-        $stmt->bind_param('i', $anexo_id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        if ($row = $result->fetch_assoc()) {
-          $archivo = $row['archivo'];
-          $rutaArchivo = $uploadDir . $archivo;
-          if (file_exists($rutaArchivo)) {
-            @unlink($rutaArchivo);
-          }
+  if (!empty($anexo_ids)) {
+    $uploadDir = __DIR__ . '/../uploads/sua_anexos/';
+
+    // Obtener todos los archivos en una sola consulta
+    $placeholders = implode(',', array_fill(0, count($anexo_ids), '?'));
+    $stmt = $conn->prepare("SELECT archivo FROM sua_anexos WHERE id IN ($placeholders)");
+    if ($stmt) {
+      $types = str_repeat('i', count($anexo_ids));
+      $stmt->bind_param($types, ...$anexo_ids);
+      $stmt->execute();
+      $result = $stmt->get_result();
+
+      // Eliminar archivos físicos
+      while ($row = $result->fetch_assoc()) {
+        $rutaArchivo = $uploadDir . $row['archivo'];
+        if (file_exists($rutaArchivo)) {
+          @unlink($rutaArchivo);
         }
-        $stmt->close();
       }
-
-      $stmt = $conn->prepare('DELETE FROM sua_anexos WHERE id = ?');
-      if ($stmt) {
-        $stmt->bind_param('i', $anexo_id);
-        $stmt->execute();
-        $stmt->close();
-      }
+      $stmt->close();
     }
+
+    // Eliminar registros de base de datos en una sola consulta
+    $stmt = $conn->prepare("DELETE FROM sua_anexos WHERE id IN ($placeholders)");
+    if ($stmt) {
+      $stmt->bind_param($types, ...$anexo_ids);
+      $stmt->execute();
+      $stmt->close();
+    }
+
+    $mensaje_anexo = 'Anexos eliminados exitosamente.';
   }
-  $mensaje_anexo = 'Anexos eliminados exitosamente.';
 }
 
 // Guardar empresa seleccionada en la sesión y en los empleados extraídos
@@ -673,7 +711,14 @@ function extraerEmpleados($texto){
 
 if(isset($_GET['action']) && $_GET['action']==='unblock' && isset($_GET['id'])){
     $id=(int)$_GET['id'];
-    $conn->query("UPDATE empleados SET bloqueado=0 WHERE id=$id");
+    if($id > 0){
+        $stmt = $conn->prepare("UPDATE empleados SET bloqueado=0 WHERE id=?");
+        if($stmt){
+            $stmt->bind_param('i', $id);
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
     header('Location: procesar_sua_auto.php?unblocked=1'); exit;
 }
 
