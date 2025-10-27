@@ -17,13 +17,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $telefono = trim($_POST['telefono'] ?? '');
     $nss      = trim($_POST['nss'] ?? '');
     $curp     = trim($_POST['curp'] ?? '');
-    $puesto   = 'Servicio Especializado';
+    $empresa  = trim($_POST['empresa'] ?? '');
     $proyId   = isset($_POST['proyecto_id']) ? (int)$_POST['proyecto_id'] : 0;
     $email    = trim($_POST['email'] ?? '');
     $password = trim($_POST['password'] ?? '');
 
     if ($nombre === '' || $telefono === '' || $email === '' || $password === '') {
         $msg = 'Nombre, teléfono, correo y contraseña son obligatorios.';
+    } elseif ($empresa === '' || !in_array($empresa, ['ErgoSolar', 'Stone', 'Remedios'], true)) {
+        $msg = 'Selecciona una empresa válida.';
     } else {
         $altaImssFile = $_FILES['alta_imss'] ?? null;
         $altaImssInfo = null;
@@ -75,9 +77,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($u->execute()) {
                 $userId = $conn->insert_id;
                 // 2) Insertar empleado con el mismo id (FK -> users.id)
-                $stmt = $conn->prepare("INSERT INTO empleados (id, nombre, telefono, nss, curp, puesto, activo, fecha_registro) VALUES (?,?,?,?,?, ?,1,NOW())");
+                $stmt = $conn->prepare("INSERT INTO empleados (id, nombre, telefono, nss, curp, empresa, activo, fecha_registro) VALUES (?,?,?,?,?, ?,1,NOW())");
                 if ($stmt) {
-                    $stmt->bind_param('isssss', $userId, $nombre, $telefono, $nss, $curp, $puesto);
+                    $stmt->bind_param('isssss', $userId, $nombre, $telefono, $nss, $curp, $empresa);
                     if ($stmt->execute()) {
                         $empleadoId = $userId;
                         // Asignación opcional a proyecto (un solo proyecto activo)
@@ -726,10 +728,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <label>CURP</label>
                             <div class="input-wrapper">
                                 <i class="fas fa-file-alt"></i>
-                                <input type="text" name="curp" placeholder="18 caracteres" maxlength="18" 
+                                <input type="text" name="curp" placeholder="18 caracteres" maxlength="18"
                                        value="<?php echo isset($_POST['curp']) ? htmlspecialchars($_POST['curp']) : ''; ?>">
                             </div>
                             <div class="form-help">18 caracteres alfanuméricos</div>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label class="required">Empresa</label>
+                            <div class="input-wrapper">
+                                <i class="fas fa-building"></i>
+                                <select name="empresa" required>
+                                    <option value="">Selecciona una empresa</option>
+                                    <option value="ErgoSolar" <?php echo (isset($_POST['empresa']) && $_POST['empresa'] === 'ErgoSolar') ? 'selected' : ''; ?>>ErgoSolar</option>
+                                    <option value="Stone" <?php echo (isset($_POST['empresa']) && $_POST['empresa'] === 'Stone') ? 'selected' : ''; ?>>Stone</option>
+                                    <option value="Remedios" <?php echo (isset($_POST['empresa']) && $_POST['empresa'] === 'Remedios') ? 'selected' : ''; ?>>Remedios</option>
+                                </select>
+                            </div>
                         </div>
 
                         <div class="form-group full-width">
