@@ -174,12 +174,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             background: var(--navy-blue-dark) url('recursos/fondo3.jpg') no-repeat center/cover fixed;
             min-height: 100vh;
+            min-height: 100dvh; /* Mejora para altura dinámica en móviles */
             display: flex;
             align-items: center;
             justify-content: center;
             padding: 24px;
             position: relative;
-            overflow: hidden;
+            overflow-x: hidden;
+            overflow-y: auto; /* Permitir scroll vertical cuando sea necesario */
             isolation: isolate;
         }
 
@@ -199,6 +201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flex-direction: column;
             align-items: center;
             gap: 28px;
+            margin: auto; /* Centrar verticalmente de forma más confiable */
         }
 
         .brand-header {
@@ -543,12 +546,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         /* Responsive Design */
         @media (max-width: 480px) {
             body {
-                padding: 18px;
+                padding: 16px;
+                padding-bottom: 20px; /* Espacio adicional abajo para el botón */
             }
 
             .app-shell {
                 max-width: 420px;
-                gap: 22px;
+                gap: 20px;
+                padding-bottom: 10px; /* Asegurar espacio para el botón */
             }
 
             .brand-header img {
@@ -556,23 +561,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             .login-container {
-                padding: 36px 26px 30px;
+                padding: 32px 24px 28px;
                 border-radius: 24px;
             }
 
             .brand-lockup {
-                padding: 18px 22px;
-                min-height: 90px;
-                gap: 16px;
+                padding: 16px 20px;
+                min-height: 86px;
+                gap: 14px;
             }
 
             .brand-icon {
-                width: 56px;
-                height: 56px;
+                width: 54px;
+                height: 54px;
+                font-size: 24px;
             }
 
             .brand-name {
-                font-size: 28px;
+                font-size: 26px;
+            }
+
+            .header {
+                margin-bottom: 28px;
+            }
+
+            .form-group {
+                margin-bottom: 20px;
             }
 
             .form-input {
@@ -581,27 +595,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             .login-button {
                 padding: 16px 20px;
+                font-size: 15px;
             }
         }
 
         @media (max-width: 360px) {
+            body {
+                padding: 12px;
+                padding-bottom: 16px;
+            }
+
+            .app-shell {
+                gap: 16px;
+            }
+
+            .brand-header img {
+                height: 44px;
+            }
+
             .login-container {
-                padding: 24px 20px 26px;
+                padding: 28px 20px 24px;
             }
 
             .brand-lockup {
-                padding: 16px 18px;
-                gap: 14px;
+                padding: 14px 16px;
+                min-height: 80px;
+                gap: 12px;
             }
 
             .brand-icon {
-                width: 52px;
-                height: 52px;
+                width: 50px;
+                height: 50px;
                 border-radius: 18px;
+                font-size: 22px;
             }
 
             .brand-name {
-                font-size: 24px;
+                font-size: 23px;
             }
 
             .brand-eyebrow {
@@ -609,9 +639,131 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 letter-spacing: 0.32em;
             }
 
+            .header {
+                margin-bottom: 24px;
+            }
+
+            .subtitle {
+                font-size: 14px;
+            }
+
+            .form-group {
+                margin-bottom: 18px;
+            }
+
+            .form-label {
+                font-size: 13px;
+                margin-bottom: 8px;
+            }
+
+            .form-input {
+                padding: 14px 16px 14px 48px;
+                font-size: 15px;
+            }
+
+            .input-icon {
+                left: 16px;
+                font-size: 16px;
+            }
+
+            .password-toggle {
+                right: 16px;
+                font-size: 16px;
+            }
+
+            .login-button {
+                padding: 15px 18px;
+                font-size: 14px;
+            }
+
             .social-footer {
                 flex-wrap: wrap;
                 row-gap: 10px;
+                font-size: 13px;
+            }
+        }
+
+        /* Optimización para teclado virtual en móviles */
+        @media (max-height: 600px) {
+            body {
+                padding: 12px 16px;
+            }
+
+            .app-shell {
+                gap: 16px;
+            }
+
+            .brand-header {
+                display: none; /* Ocultar logo cuando hay poco espacio vertical */
+            }
+
+            .brand-lockup {
+                padding: 14px 18px;
+                min-height: 76px;
+            }
+
+            .header {
+                margin-bottom: 20px;
+            }
+
+            .subtitle {
+                font-size: 13px;
+            }
+
+            .form-container {
+                margin-bottom: 24px;
+            }
+
+            .form-group {
+                margin-bottom: 16px;
+            }
+
+            .social-footer {
+                margin-top: 4px;
+                font-size: 12px;
+            }
+        }
+
+        /* Para pantallas muy pequeñas con teclado visible */
+        @media (max-height: 500px) {
+            .brand-lockup {
+                padding: 12px 16px;
+                min-height: 70px;
+                margin-bottom: 16px;
+            }
+
+            .brand-icon {
+                width: 48px;
+                height: 48px;
+                font-size: 20px;
+            }
+
+            .brand-name {
+                font-size: 20px;
+            }
+
+            .brand-eyebrow {
+                font-size: 10px;
+            }
+
+            .header {
+                margin-bottom: 16px;
+            }
+
+            .subtitle {
+                display: none; /* Ocultar subtítulo en pantallas muy pequeñas */
+            }
+
+            .form-group {
+                margin-bottom: 14px;
+            }
+
+            .form-container {
+                margin-bottom: 20px;
+            }
+
+            .social-footer {
+                display: none; /* Ocultar footer en pantallas muy pequeñas */
             }
         }
 
