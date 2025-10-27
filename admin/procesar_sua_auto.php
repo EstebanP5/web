@@ -244,7 +244,102 @@ if(!$colPwdVisible->num_rows) {
   $conn->query("ALTER TABLE users ADD COLUMN password_visible VARCHAR(191) NULL AFTER password");
 }
 
+// Crear tabla de anexos para almacenar PDFs adicionales con fecha
+$conn->query("CREATE TABLE IF NOT EXISTS sua_anexos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  archivo VARCHAR(255) NOT NULL,
+  fecha_anexo DATE NOT NULL,
+  nombre_original VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_by INT DEFAULT NULL,
+  INDEX idx_fecha (fecha_anexo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
 $mensaje=''; $error=''; $lote_id=null; $empleados_extraidos=[]; $fecha_proceso=null; $faltantes=[]; $proyectos=[]; $credenciales_generadas=[];
+$mensaje_anexo=''; $error_anexo='';
+
+// Procesar subida de anexo PDF
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['subir_anexo']) && isset($_FILES['anexo_pdf'])) {
+  $fecha_anexo = isset($_POST['fecha_anexo']) ? trim($_POST['fecha_anexo']) : '';
+
+  if (empty($fecha_anexo)) {
+    $error_anexo = 'Debe seleccionar una fecha para el anexo.';
+  } elseif ($_FILES['anexo_pdf']['error'] === UPLOAD_ERR_OK) {
+    $tmp = $_FILES['anexo_pdf']['tmp_name'];
+    $nombre_original = basename($_FILES['anexo_pdf']['name']);
+    $ext = strtolower(pathinfo($nombre_original, PATHINFO_EXTENSION));
+
+    if ($ext !== 'pdf') {
+      $error_anexo = 'Solo se permiten archivos PDF.';
+    } else {
+      $uploadDir = __DIR__ . '/../uploads/sua_anexos/';
+      if (!is_dir($uploadDir)) {
+        mkdir($uploadDir, 0755, true);
+      }
+
+      $timestamp = time();
+      $nombreArchivo = 'anexo_' . date('Ymd_His', $timestamp) . '_' . uniqid() . '.pdf';
+      $rutaDestino = $uploadDir . $nombreArchivo;
+
+      if (move_uploaded_file($tmp, $rutaDestino)) {
+        $userId = $_SESSION['user_id'] ?? null;
+        $stmt = $conn->prepare('INSERT INTO sua_anexos (archivo, fecha_anexo, nombre_original, created_by) VALUES (?, ?, ?, ?)');
+        if ($stmt) {
+          $stmt->bind_param('sssi', $nombreArchivo, $fecha_anexo, $nombre_original, $userId);
+          if ($stmt->execute()) {
+            $mensaje_anexo = 'Anexo subido exitosamente con fecha ' . date('d/m/Y', strtotime($fecha_anexo)) . '.';
+          } else {
+            $error_anexo = 'Error al registrar el anexo en la base de datos.';
+            @unlink($rutaDestino);
+          }
+          $stmt->close();
+        } else {
+          $error_anexo = 'Error al preparar la consulta.';
+          @unlink($rutaDestino);
+        }
+      } else {
+        $error_anexo = 'Error al mover el archivo al directorio de destino.';
+      }
+    }
+  } else {
+    $error_anexo = 'Error al subir el archivo. Código: ' . $_FILES['anexo_pdf']['error'];
+  }
+}
+
+// Eliminar anexos seleccionados
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['eliminar_anexos']) && isset($_POST['anexo_ids'])) {
+  $anexo_ids = $_POST['anexo_ids'];
+  $uploadDir = __DIR__ . '/../uploads/sua_anexos/';
+
+  foreach ($anexo_ids as $anexo_id) {
+    $anexo_id = (int)$anexo_id;
+    if ($anexo_id > 0) {
+      $stmt = $conn->prepare('SELECT archivo FROM sua_anexos WHERE id = ? LIMIT 1');
+      if ($stmt) {
+        $stmt->bind_param('i', $anexo_id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        if ($row = $result->fetch_assoc()) {
+          $archivo = $row['archivo'];
+          $rutaArchivo = $uploadDir . $archivo;
+          if (file_exists($rutaArchivo)) {
+            @unlink($rutaArchivo);
+          }
+        }
+        $stmt->close();
+      }
+
+      $stmt = $conn->prepare('DELETE FROM sua_anexos WHERE id = ?');
+      if ($stmt) {
+        $stmt->bind_param('i', $anexo_id);
+        $stmt->execute();
+        $stmt->close();
+      }
+    }
+  }
+  $mensaje_anexo = 'Anexos eliminados exitosamente.';
+}
+
 // Guardar empresa seleccionada en la sesión y en los empleados extraídos
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_autorizados'])) {
   $empresa = isset($_POST['empresa_sua']) ? trim($_POST['empresa_sua']) : '';
@@ -834,6 +929,9 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_FILES['sua_pdf']) && (!isset($
 // Listado de últimos lotes
 $lotes=$conn->query("SELECT * FROM sua_lotes ORDER BY id DESC LIMIT 20");
 
+// Listado de anexos
+$anexos=$conn->query("SELECT * FROM sua_anexos ORDER BY fecha_anexo DESC, id DESC LIMIT 50");
+
 // Calcular faltantes (no renovados) respecto a empleados activos actuales
 if($empleados_extraidos){
   $nssLista = array_column($empleados_extraidos,'nss');
@@ -1362,6 +1460,94 @@ th {
       <?php endif; ?>
     </div>
 
+    <!-- Nuevo Panel de Anexos -->
+    <div class="panel">
+      <h2 class="section-title">
+          <i class="fas fa-paperclip"></i>
+          Anexos
+          <span style="font-size:14px;font-weight:400;color:#64748b;">(PDFs adicionales con fecha)</span>
+      </h2>
+
+      <?php if($mensaje_anexo): ?>
+        <div class="alert alert-success">
+            <i class="fas fa-check-circle"></i>
+            <?= htmlspecialchars($mensaje_anexo) ?>
+        </div>
+      <?php endif; ?>
+      <?php if($error_anexo): ?>
+        <div class="alert alert-error">
+            <i class="fas fa-exclamation-circle"></i>
+            <?= htmlspecialchars($error_anexo) ?>
+        </div>
+      <?php endif; ?>
+
+      <form class="upload" method="post" enctype="multipart/form-data" style="margin-bottom:32px;">
+        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;">
+          <div style="flex:1;min-width:200px;">
+            <label class="form-label" for="fecha_anexo">Fecha del Anexo</label>
+            <input type="date" name="fecha_anexo" id="fecha_anexo" value="<?= htmlspecialchars(date('Y-m-d')) ?>" required style="width:100%;padding:10px;border-radius:10px;border:1px solid #cbd5e1;">
+          </div>
+          <div style="flex:2;min-width:250px;">
+            <label class="form-label" for="anexo_pdf">Archivo PDF</label>
+            <input type="file" name="anexo_pdf" id="anexo_pdf" accept="application/pdf" required>
+          </div>
+          <button type="submit" name="subir_anexo" class="btn-primary" title="Subir Anexo PDF">
+              <i class="fas fa-upload"></i>
+              Subir Anexo
+          </button>
+        </div>
+      </form>
+
+      <h3 class="section-title" style="font-size:16px;margin-top:24px;">
+          <i class="fas fa-list"></i>
+          Anexos Registrados
+      </h3>
+
+      <form method="post" onsubmit="return confirm('¿Eliminar los anexos seleccionados? Esta acción no se puede deshacer.');">
+        <input type="hidden" name="eliminar_anexos" value="1">
+        <div class="mini-table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:60px;"><input type="checkbox" id="chk_all_anexos" onclick="toggleAllAnexos(this)"></th>
+                <th>Fecha del Anexo</th>
+                <th>Archivo Original</th>
+                <th>Fecha de Subida</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php if($anexos && $anexos->num_rows): while($anexo=$anexos->fetch_assoc()): ?>
+                <tr>
+                  <td style="text-align:center;">
+                    <input type="checkbox" name="anexo_ids[]" value="<?= (int)$anexo['id'] ?>" title="Anexo #<?= (int)$anexo['id'] ?>">
+                  </td>
+                  <td><?= htmlspecialchars(date('d/m/Y', strtotime($anexo['fecha_anexo']))) ?></td>
+                  <td><?= htmlspecialchars($anexo['nombre_original']) ?></td>
+                  <td><?= htmlspecialchars(date('d/m/Y H:i', strtotime($anexo['created_at']))) ?></td>
+                  <td>
+                    <a href="../uploads/sua_anexos/<?= urlencode($anexo['archivo']) ?>" target="_blank" class="btn-secondary" style="padding:6px 12px;font-size:13px;text-decoration:none;">
+                      <i class="fas fa-eye"></i> Ver PDF
+                    </a>
+                  </td>
+                </tr>
+              <?php endwhile; else: ?>
+                <tr><td colspan="5" style="text-align:center;color:#64748b;padding:32px;">No hay anexos registrados</td></tr>
+              <?php endif; ?>
+            </tbody>
+          </table>
+        </div>
+        <?php if($anexos && $anexos->num_rows): ?>
+        <div style="margin-top:24px;display:flex;justify-content:flex-start;">
+          <button type="submit" class="btn-danger">
+              <i class="fas fa-trash"></i>
+              Eliminar Seleccionados
+          </button>
+        </div>
+        <?php endif; ?>
+      </form>
+    </div>
+
     <div class="panel">
         <h2 class="section-title">
             <i class="fas fa-file-pdf"></i>
@@ -1608,6 +1794,10 @@ th {
 <script>
 function toggleAllLotes(master){
   const checks=document.querySelectorAll('input[name="lote_ids[]"]');
+  checks.forEach(c=>c.checked=master.checked);
+}
+function toggleAllAnexos(master){
+  const checks=document.querySelectorAll('input[name="anexo_ids[]"]');
   checks.forEach(c=>c.checked=master.checked);
 }
 function toggleManual(){
