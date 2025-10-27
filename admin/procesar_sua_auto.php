@@ -640,25 +640,27 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['guardar_autorizados'])){
     $mesFecha = substr($fecha_proceso,0,7).'-01';
     $ins = $conn->prepare("INSERT INTO autorizados_mes(fecha,nss,nombre,curp) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE nombre=VALUES(nombre), curp=VALUES(curp)");
     $creados=0; $actualizados=0;
+    $nssSUA = [];
     foreach($empleados_extraidos as $e){
       $nss = $e['nss']; $nombre=$e['nombre']; $curp=$e['curp'];
       if(!$nss) continue; // seguridad
+      $nssSUA[] = $nss;
       // Guardar / actualizar en autorizados del mes
       $ins->bind_param('ssss',$mesFecha,$nss,$nombre,$curp); $ins->execute();
       // Buscar empleado por NSS
       $sel = $conn->prepare('SELECT id FROM empleados WHERE nss=? LIMIT 1');
       $sel->bind_param('s',$nss); $sel->execute(); $row=$sel->get_result()->fetch_assoc();
-    if($row){
-  $up=$conn->prepare('UPDATE empleados SET nombre=?, curp=?, puesto="Servicio Especializado", bloqueado=0, activo=1 WHERE id=?');
-  $up->bind_param('ssi',$nombre,$curp,$row['id']);
+      if($row){
+        $up=$conn->prepare('UPDATE empleados SET nombre=?, curp=?, puesto="Servicio Especializado", bloqueado=0, activo=1 WHERE id=?');
+        $up->bind_param('ssi',$nombre,$curp,$row['id']);
         $up->execute();
         $actualizados++;
       } else {
-  $email = suaGenerateUniqueEmail($conn, $nombre);
-  $pwdPlain = suaGeneratePassword();
-  $pwdHash = password_hash($pwdPlain, PASSWORD_DEFAULT);
+        $email = suaGenerateUniqueEmail($conn, $nombre);
+        $pwdPlain = suaGeneratePassword();
+        $pwdHash = password_hash($pwdPlain, PASSWORD_DEFAULT);
         $userId = 0;
-  if ($stmtUser = $conn->prepare("INSERT INTO users(name,email,password,password_visible,rol,activo) VALUES (?,?,?,?, 'servicio_especializado',1)")) {
+        if ($stmtUser = $conn->prepare("INSERT INTO users(name,email,password,password_visible,rol,activo) VALUES (?,?,?,?, 'servicio_especializado',1)")) {
           $stmtUser->bind_param('ssss', $nombre, $email, $pwdHash, $pwdPlain);
           if ($stmtUser->execute()) {
             $userId = (int)$stmtUser->insert_id;
@@ -675,8 +677,8 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['guardar_autorizados'])){
           }
         }
         if($userId){
-          $stmtEmp = $conn->prepare("INSERT INTO empleados(id,nombre,nss,curp,puesto,activo,bloqueado) VALUES(?,?,?,?, 'Servicio Especializado',1,0) ON DUPLICATE KEY UPDATE nombre=VALUES(nombre), nss=VALUES(nss), curp=VALUES(curp), puesto='Servicio Especializado', activo=1, bloqueado=0");
-          $stmtEmp->bind_param('isss',$userId,$nombre,$nss,$curp); $stmtEmp->execute();
+          $stmtEmp = $conn->prepare("INSERT INTO empleados(id,nombre,nss,curp,empresa,puesto,activo,bloqueado) VALUES(?,?,?,?,?, 'Servicio Especializado',1,0) ON DUPLICATE KEY UPDATE nombre=VALUES(nombre), nss=VALUES(nss), curp=VALUES(curp), empresa=VALUES(empresa), puesto='Servicio Especializado', activo=1, bloqueado=0");
+          $stmtEmp->bind_param('issss',$userId,$nombre,$nss,$curp,$e['empresa']); $stmtEmp->execute();
           suaEnsurePasswordVisible($conn, $userId, $pwdPlain, true);
           suaRegistrarCredencial($conn, $credenciales_generadas, $userId, $nombre);
           $creados++;
@@ -685,6 +687,29 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['guardar_autorizados'])){
       if($row){
         suaEnsurePasswordVisible($conn, (int)$row['id']);
         suaRegistrarCredencial($conn, $credenciales_generadas, (int)$row['id'], $nombre);
+      }
+    }
+    // Bloquear y desasignar empleados de la empresa que no estén en el SUA
+    $empresaSeleccionada = isset($_POST['empresa_sua']) ? trim($_POST['empresa_sua']) : '';
+    if ($empresaSeleccionada && !empty($nssSUA)) {
+      // Buscar empleados activos de esa empresa que no estén en el SUA
+      $sqlBloquear = "SELECT id FROM empleados WHERE empresa = ? AND activo = 1 AND bloqueado = 0 AND nss NOT IN (" . implode(',', array_fill(0, count($nssSUA), '?')) . ")";
+      $params = array_merge([$empresaSeleccionada], $nssSUA);
+      $types = str_repeat('s', count($params));
+      $stmtBloquear = $conn->prepare($sqlBloquear);
+      $stmtBloquear->bind_param($types, ...$params);
+      $stmtBloquear->execute();
+      $resultBloquear = $stmtBloquear->get_result();
+      $idsBloquear = [];
+      while ($row = $resultBloquear->fetch_assoc()) {
+        $idsBloquear[] = (int)$row['id'];
+      }
+      $stmtBloquear->close();
+      // Bloquear y desasignar
+      foreach ($idsBloquear as $idEmp) {
+        $conn->query("UPDATE empleados SET bloqueado = 1, activo = 0 WHERE id = " . $idEmp);
+        $conn->query("UPDATE empleado_proyecto SET activo = 0 WHERE empleado_id = " . $idEmp);
+        $conn->query("UPDATE empleado_asignaciones SET status = 'finalizado' WHERE empleado_id = " . $idEmp . " AND status <> 'finalizado'");
       }
     }
     $total = count($empleados_extraidos);
