@@ -163,7 +163,8 @@ if (!empty($proyecto['fecha_inicio'])) {
 }
 if (!empty($proyecto['fecha_fin'])) {
 	try {
-		$projectEndLimit = (new DateTimeImmutable($proyecto['fecha_fin']))->format('Y-m-d');
+		// Usar la fecha completa con hora para comparar correctamente
+		$projectEndLimit = (new DateTimeImmutable($proyecto['fecha_fin']))->format('Y-m-d H:i:s');
 	} catch (Throwable $e) {
 		$projectEndLimit = null;
 	}
@@ -200,12 +201,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 		if ($projectEndLimit) {
 			$limit = new DateTimeImmutable($projectEndLimit);
-			if ($inicio > $limit) {
-				$_SESSION['flash_error'] = 'El proyecto termina antes del inicio programado.';
-				header('Location: proyecto_empleados.php?id=' . $proyectoId);
-				exit;
-			}
-			if ($fin > $limit) {
+			// Permitir asignar trabajadores hasta el último momento de la vigencia (inclusive)
+			if ($fin->format('Y-m-d') > $limit->format('Y-m-d')) {
 				$_SESSION['flash_error'] = 'La fecha de fin rebasa la vigencia del proyecto.';
 				header('Location: proyecto_empleados.php?id=' . $proyectoId);
 				exit;
@@ -243,8 +240,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			exit;
 		}
 
-		$inicioStr = $inicio->format('Y-m-d');
-		$finStr = $fin->format('Y-m-d');
+	$inicioStr = $inicio->format('Y-m-d 00:00:00');
+	$finStr = $fin->format('Y-m-d 00:00:00');
 
 		$traslapes = [];
 		if ($stmtOverlap = $conn->prepare('SELECT g.nombre, ea.fecha_inicio, ea.fecha_fin
@@ -978,9 +975,9 @@ $minScheduleDate = $projectStartLimit && $projectStartLimit > $today ? $projectS
 								}
 								$notesText = $notes ? ' (' . htmlspecialchars(implode(' | ', $notes), ENT_QUOTES, 'UTF-8') . ')' : ' (Disponible)';
 							?>
-							<option value="<?= $employeeId; ?>" data-name="<?= htmlspecialchars($employee['nombre'] ?? '', ENT_QUOTES, 'UTF-8'); ?>"<?= $isSelectedEmployee ? ' selected' : ''; ?>>
-								<?= $display . $notesText; ?>
-							</option>
+															<option value="<?= $employeeId; ?>" data-name="<?= htmlspecialchars($employee['nombre'] ?? '', ENT_QUOTES, 'UTF-8'); ?>"<?= $isSelectedEmployee ? ' selected' : ''; ?>>
+																<?= $display . ' (' . htmlspecialchars($employee['empresa'] ?? '-', ENT_QUOTES, 'UTF-8') . ')' . $notesText; ?>
+															</option>
 						<?php endforeach; ?>
 					</select>
 				</div>
@@ -991,7 +988,7 @@ $minScheduleDate = $projectStartLimit && $projectStartLimit > $today ? $projectS
 					</div>
 					<div class="form-field">
 						<label for="fecha_fin">Fecha de fin</label>
-						<input type="date" name="fecha_fin" id="fecha_fin" required min="<?= htmlspecialchars($minScheduleDate, ENT_QUOTES, 'UTF-8'); ?>"<?php if ($projectEndLimit): ?> max="<?= htmlspecialchars($projectEndLimit, ENT_QUOTES, 'UTF-8'); ?>"<?php endif; ?>>
+						<input type="date" name="fecha_fin" id="fecha_fin" required min="<?= htmlspecialchars($minScheduleDate, ENT_QUOTES, 'UTF-8'); ?>"<?php if ($projectEndLimit): ?> max="<?= htmlspecialchars(substr($projectEndLimit,0,10), ENT_QUOTES, 'UTF-8'); ?>"<?php endif; ?>>
 					</div>
 				</div>
 				<input type="hidden" name="action" value="schedule">

@@ -113,7 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($values['fecha_fin'] !== '') {
         $fin = DateTime::createFromFormat('Y-m-d', $values['fecha_fin']);
         if ($fin && $fin->format('Y-m-d') === $values['fecha_fin']) {
-            $fechaFinSql = $values['fecha_fin'];
+            $fechaFinSql = $fin->format('Y-m-d 00:00:00');
         } else {
             $errors[] = 'La fecha de fin no tiene un formato válido (AAAA-MM-DD).';
         }

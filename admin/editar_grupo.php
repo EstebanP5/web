@@ -54,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   if ($fecha_fin_raw !== '') {
     try {
-      $fecha_fin_sql = (new DateTimeImmutable($fecha_fin_raw))->format('Y-m-d');
+      $fecha_fin_sql = (new DateTimeImmutable($fecha_fin_raw))->format('Y-m-d 00:00:00');
     } catch (Throwable $e) {
       $fecha_fin_sql = null;
     }

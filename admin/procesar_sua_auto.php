@@ -263,9 +263,18 @@ suaEnsureColumnsExist($conn, 'empleados', [
 ]);
 
 // Agregar índices para mejorar rendimiento de consultas frecuentes
-$conn->query("CREATE INDEX IF NOT EXISTS idx_empleados_nss ON empleados(nss)");
-$conn->query("CREATE INDEX IF NOT EXISTS idx_empleados_bloqueado ON empleados(bloqueado)");
-$conn->query("CREATE INDEX IF NOT EXISTS idx_empleados_activo ON empleados(activo)");
+$res = $conn->query("SHOW INDEX FROM empleados WHERE Key_name = 'idx_empleados_nss'");
+if ($res && $res->num_rows === 0) {
+  $conn->query("CREATE INDEX idx_empleados_nss ON empleados(nss)");
+}
+$res = $conn->query("SHOW INDEX FROM empleados WHERE Key_name = 'idx_empleados_bloqueado'");
+if ($res && $res->num_rows === 0) {
+  $conn->query("CREATE INDEX idx_empleados_bloqueado ON empleados(bloqueado)");
+}
+$res = $conn->query("SHOW INDEX FROM empleados WHERE Key_name = 'idx_empleados_activo'");
+if ($res && $res->num_rows === 0) {
+  $conn->query("CREATE INDEX idx_empleados_activo ON empleados(activo)");
+}
 
 // Verificar y agregar columnas faltantes en sua_empleados
 suaEnsureColumnsExist($conn, 'sua_empleados', [
@@ -999,7 +1008,7 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_FILES['sua_pdf']) && (!isset($
               // Sincronizar con empleados (por NSS si existe)
               $resEmp=$conn->prepare('SELECT id FROM empleados WHERE nss=? LIMIT 1'); $resEmp->bind_param('s',$emp['nss']); $resEmp->execute(); $row=$resEmp->get_result()->fetch_assoc();
               if($row){
-                $up=$conn->prepare('UPDATE empleados SET curp=?, bloqueado=0, empresa=? WHERE id=?'); $up->bind_param('sssi',$emp['curp'],$empresa,$row['id']); $up->execute();
+                $up=$conn->prepare('UPDATE empleados SET curp=?, bloqueado=0, empresa=? WHERE id=?'); $up->bind_param('ssi',$emp['curp'],$empresa,$row['id']); $up->execute();
               }
             }
                         $mensaje='Procesado correctamente. Servicios Especializados detectados: '.$total;
