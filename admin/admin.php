@@ -182,6 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $telefono = trim($_POST['telefono'] ?? '');
         $nss = trim($_POST['nss'] ?? '');
         $curp = trim($_POST['curp'] ?? '');
+        $empresa = trim($_POST['empresa'] ?? '');
         $puesto = 'Servicio Especializado';
         $salario = isset($_POST['salario']) ? floatval($_POST['salario']) : 0;
         $email = trim($_POST['email'] ?? '');
@@ -196,6 +197,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!$nombre || !$telefono || !$email || !$password) {
             $mensaje_error = '❌ Nombre, teléfono, correo, contraseña y alta IMSS son obligatorios.';
+        } elseif ($empresa === '' || !in_array($empresa, ['ErgoSolar', 'Stone', 'Remedios'], true)) {
+            $mensaje_error = '❌ Selecciona una empresa válida.';
         } elseif (!$altaImssFile || ($altaImssFile['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
             $mensaje_error = '❌ Debes adjuntar el alta del IMSS en formato PDF o imagen.';
         } elseif (($altaImssFile['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
@@ -240,9 +243,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $u->bind_param('sss', $nombre, $email, $hash);
                 if ($u->execute()) {
                     $userId = $conn->insert_id;
-                    $stmt = $conn->prepare('INSERT INTO empleados (id, nombre, telefono, nss, curp, puesto, activo, fecha_registro) VALUES (?, ?, ?, ?, ?, ?, 1, NOW())');
+                    $stmt = $conn->prepare('INSERT INTO empleados (id, nombre, telefono, nss, curp, empresa, activo, fecha_registro) VALUES (?, ?, ?, ?, ?, ?, 1, NOW())');
                     if ($stmt) {
-                        $stmt->bind_param('isssss', $userId, $nombre, $telefono, $nss, $curp, $puesto);
+                        $stmt->bind_param('isssss', $userId, $nombre, $telefono, $nss, $curp, $empresa);
                         if ($stmt->execute()) {
                             $conn->query("CREATE TABLE IF NOT EXISTS empleado_documentos (
                                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -736,6 +739,16 @@ include __DIR__ . '/includes/header.php';
                     <label>CURP</label>
                     <input type="text" name="curp" class="form-control" maxlength="18" placeholder="PEGJ850101HDFRZN01">
                 </div>
+            </div>
+
+            <div class="form-group">
+                <label>Empresa *</label>
+                <select name="empresa" class="form-control" required>
+                    <option value="">Selecciona una empresa</option>
+                    <option value="ErgoSolar">ErgoSolar</option>
+                    <option value="Stone">Stone</option>
+                    <option value="Remedios">Remedios</option>
+                </select>
             </div>
 
             <div class="form-grid">
