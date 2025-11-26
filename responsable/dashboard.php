@@ -363,7 +363,7 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panel de Servicio Especializado - ErgoCuida</title>
+    <title>Panel de Servicio Especializado </title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -820,6 +820,13 @@ if ($proyecto_actual && !empty($proyecto_actual['token'])) {
         <div class="welcome-banner">
             <h2>¡Hola, <?php echo htmlspecialchars(explode(' ', $user_name)[0]); ?>!</h2>
             <p>Registra tu asistencia diaria y mantente al día con tu proyecto</p>
+            <?php if ($_SESSION['user_rol'] === 'responsable'): ?>
+                <div style="margin-top: 15px;">
+                    <a href="suas.php" style="background: #3b82f6; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; font-weight: 600;">
+                        <i class="fas fa-file-invoice"></i> Gestionar SUAs
+                    </a>
+                </div>
+            <?php endif; ?>
         </div>
 
         <!-- Indicador de hora del servidor (seguridad) -->
