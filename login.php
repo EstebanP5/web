@@ -45,6 +45,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     case 'pm':
                         $redirect = 'pm/dashboard.php';
                         break;
+                    case 'empresa':
+                        $redirect = 'empresa/dashboard.php';
+                        break;
                     case 'responsable':
                     case 'servicio_especializado':
                         $redirect = 'responsable/dashboard.php';

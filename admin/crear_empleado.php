@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($nombre === '' || $telefono === '' || $email === '' || $password === '') {
         $msg = 'Nombre, teléfono, correo y contraseña son obligatorios.';
-    } elseif ($empresa === '' || !in_array($empresa, ['ErgoSolar', 'Stone', 'Remedios'], true)) {
+    } elseif ($empresa === '' || !in_array($empresa, ['CEDISA', 'Stone', 'Remedios'], true)) {
         $msg = 'Selecciona una empresa válida.';
     } else {
         $altaImssFile = $_FILES['alta_imss'] ?? null;
@@ -740,7 +740,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <i class="fas fa-building"></i>
                                 <select name="empresa" required>
                                     <option value="">Selecciona una empresa</option>
-                                    <option value="ErgoSolar" <?php echo (isset($_POST['empresa']) && $_POST['empresa'] === 'ErgoSolar') ? 'selected' : ''; ?>>ErgoSolar</option>
+                                    <option value="CEDISA" <?php echo (isset($_POST['empresa']) && $_POST['empresa'] === 'CEDISA') ? 'selected' : ''; ?>>CEDISA</option>
                                     <option value="Stone" <?php echo (isset($_POST['empresa']) && $_POST['empresa'] === 'Stone') ? 'selected' : ''; ?>>Stone</option>
                                     <option value="Remedios" <?php echo (isset($_POST['empresa']) && $_POST['empresa'] === 'Remedios') ? 'selected' : ''; ?>>Remedios</option>
                                 </select>

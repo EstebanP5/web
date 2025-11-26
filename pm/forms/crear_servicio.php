@@ -62,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($values['curp'] === '') {
         $errors[] = 'La CURP es obligatoria.';
     }
-    if ($values['empresa'] === '' || !in_array($values['empresa'], ['ErgoSolar', 'Stone', 'Remedios'], true)) {
+    if ($values['empresa'] === '' || !in_array($values['empresa'], ['CEDISA', 'Stone', 'Remedios'], true)) {
         $errors[] = 'Selecciona una empresa válida.';
     }
     if ($values['email'] === '' || !filter_var($values['email'], FILTER_VALIDATE_EMAIL)) {
@@ -450,7 +450,7 @@ $pmCssVersion = file_exists($pmCssPath) ? filemtime($pmCssPath) : time();
                 <label for="empresa">Empresa *</label>
                 <select id="empresa" name="empresa" required>
                     <option value="">Selecciona una empresa</option>
-                    <option value="ErgoSolar" <?= $values['empresa'] === 'ErgoSolar' ? 'selected' : ''; ?>>ErgoSolar</option>
+                    <option value="CEDISA" <?= $values['empresa'] === 'CEDISA' ? 'selected' : ''; ?>>CEDISA</option>
                     <option value="Stone" <?= $values['empresa'] === 'Stone' ? 'selected' : ''; ?>>Stone</option>
                     <option value="Remedios" <?= $values['empresa'] === 'Remedios' ? 'selected' : ''; ?>>Remedios</option>
                 </select>
