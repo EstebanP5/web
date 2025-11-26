@@ -45,6 +45,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     case 'pm':
                         $redirect = 'pm/dashboard.php';
                         break;
+                    case 'responsable_empresa':
+                        $redirect = 'empresa/dashboard.php';
+                        break;
                     case 'responsable':
                     case 'servicio_especializado':
                         $redirect = 'responsable/dashboard.php';
@@ -898,7 +901,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <a href="https://www.instagram.com/" target="_blank" rel="noopener">
                 <i class="fab fa-instagram"></i>
             </a>
-            <span>ErgoSolar.mx</span>
+            <span>ErgoCuida.mx</span>
         </div>
     </div>
 

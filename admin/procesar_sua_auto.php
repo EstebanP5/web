@@ -1740,7 +1740,7 @@ th {
                   <select name="empresa_sua" id="empresa_sua" style="padding:8px 12px;border-radius:8px;">
                     <option value="Stone">Stone</option>
                     <option value="Remedios">Remedios</option>
-                    <option value="ErgoSolar">ErgoSolar</option>
+                    <option value="CEDISA">CEDISA</option>
                   </select>
                   <button type="submit" class="btn-success">
                       <i class="fas fa-check"></i>

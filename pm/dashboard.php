@@ -461,6 +461,13 @@ $pmCssVersion = file_exists($pmCssPath) ? filemtime($pmCssPath) : time();
                         <span>Actualiza datos, accesos y asignaciones del personal externo.</span>
                     </div>
                 </a>
+                <a href="documentos.php" class="quick-action">
+                    <div class="quick-action__icon" style="background: linear-gradient(135deg, #2563eb, #1d4ed8);"><i class="fas fa-folder-open"></i></div>
+                    <div class="quick-action__content">
+                        <strong>Mis Documentos</strong>
+                        <span>Sube y gestiona PDFs, contratos y archivos de trabajo.</span>
+                    </div>
+                </a>
             </div>
         </section>
     </div>
