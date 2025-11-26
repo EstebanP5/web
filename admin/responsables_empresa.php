@@ -11,21 +11,17 @@ if (!$result || $result->num_rows === 0) {
     $conn->query("ALTER TABLE users ADD COLUMN empresa VARCHAR(100) NULL AFTER rol");
 }
 
-// Asegurar que el rol 'responsable_empresa' está soportado en la columna rol
+// Asegurar que el rol 'responsable_empresa' está soportado
+// Si la columna rol es ENUM y no incluye responsable_empresa, convertirla a VARCHAR
+// para mayor flexibilidad
 $result = $conn->query("SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'rol'");
 if ($result) {
     $row = $result->fetch_assoc();
     $columnType = $row['COLUMN_TYPE'] ?? '';
     
+    // Si es ENUM y no tiene el valor, convertir a VARCHAR(50) para mayor flexibilidad
     if (stripos($columnType, 'enum') !== false && stripos($columnType, 'responsable_empresa') === false) {
-        // Extraer valores del enum y agregar el nuevo
-        if (preg_match("/^enum\((.+)\)$/i", $columnType, $matches)) {
-            $existingValues = $matches[1];
-            $newEnumValues = $existingValues . ",'responsable_empresa'";
-            $conn->query("ALTER TABLE users MODIFY COLUMN rol ENUM(" . str_replace("'", "", $newEnumValues) . ") NULL");
-        }
-    } elseif (stripos($columnType, 'varchar') !== false) {
-        // Ya es VARCHAR, no necesita cambios
+        $conn->query("ALTER TABLE users MODIFY COLUMN rol VARCHAR(50) NULL");
     }
 }
 

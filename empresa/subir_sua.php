@@ -93,12 +93,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['subir_sua']) && isset
                         $mensaje_exito = 'Documento SUA "' . htmlspecialchars($titulo) . '" subido exitosamente.';
                     } else {
                         $mensaje_error = 'Error al registrar el documento en la base de datos.';
-                        @unlink($rutaDestino);
+                        if (file_exists($rutaDestino)) {
+                            unlink($rutaDestino);
+                        }
                     }
                     $stmt->close();
                 } else {
                     $mensaje_error = 'Error al preparar la consulta.';
-                    @unlink($rutaDestino);
+                    if (file_exists($rutaDestino)) {
+                        unlink($rutaDestino);
+                    }
                 }
             } else {
                 $mensaje_error = 'Error al mover el archivo al directorio de destino.';

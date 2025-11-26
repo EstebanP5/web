@@ -71,12 +71,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['subir_documento']) &&
                         $mensaje_exito = 'Documento "' . htmlspecialchars($titulo) . '" subido exitosamente.';
                     } else {
                         $mensaje_error = 'Error al registrar el documento en la base de datos.';
-                        @unlink($rutaDestino);
+                        if (file_exists($rutaDestino)) {
+                            unlink($rutaDestino);
+                        }
                     }
                     $stmt->close();
                 } else {
                     $mensaje_error = 'Error al preparar la consulta.';
-                    @unlink($rutaDestino);
+                    if (file_exists($rutaDestino)) {
+                        unlink($rutaDestino);
+                    }
                 }
             } else {
                 $mensaje_error = 'Error al mover el archivo al directorio de destino.';
@@ -102,7 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['eliminar_documento'])
             if ($row = $result->fetch_assoc()) {
                 $rutaArchivo = __DIR__ . '/../' . $row['ruta_archivo'];
                 if (file_exists($rutaArchivo)) {
-                    @unlink($rutaArchivo);
+                    unlink($rutaArchivo);
                 }
                 
                 $stmtDelete = $conn->prepare('DELETE FROM pm_documentos WHERE id = ? AND pm_user_id = ?');
