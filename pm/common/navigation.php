@@ -49,6 +49,10 @@ if (!function_exists('pm_nav_path')) {
                 <i class="fas fa-camera"></i>
                 <span>Fotos</span>
             </a>
+            <a href="<?= htmlspecialchars(pm_nav_path($pmBaseUri, 'documentos.php')) ?>" class="nav-item <?= $current_page === 'documentos' ? 'active' : '' ?>">
+                <i class="fas fa-folder-open"></i>
+                <span>Documentos</span>
+            </a>
             <a href="../common/videos.php" class="nav-item">
                 <i class="fas fa-video"></i>
                 <span>Videos</span>

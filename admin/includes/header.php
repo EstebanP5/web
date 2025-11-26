@@ -52,6 +52,10 @@ function admin_is_active(string $slug, string $current): string {
                     <i class="fas fa-users"></i>
                     <span>Servicios Especializados</span>
                 </a>
+                <a class="admin-sidebar__link<?php echo admin_is_active('empresa_responsables', $activePage); ?>" href="responsables_empresa.php">
+                    <i class="fas fa-building-user"></i>
+                    <span>Responsables Empresa</span>
+                </a>
                 <a class="admin-sidebar__link<?php echo admin_is_active('attendance', $activePage); ?>" href="asistencias_mejorado.php">
                     <i class="fas fa-calendar-check"></i>
                     <span>Asistencia</span>
@@ -92,8 +96,9 @@ function admin_is_active(string $slug, string $current): string {
                                 $actionIcon = $action['icon'] ?? '';
                                 $actionLabel = $action['label'] ?? '';
                                 $variant = $action['variant'] ?? 'primary';
+                                $actionOnClick = $action['onclick'] ?? '';
                             ?>
-                            <a class="admin-btn admin-btn--<?php echo htmlspecialchars($variant); ?>" href="<?php echo htmlspecialchars($actionHref); ?>">
+                            <a class="admin-btn admin-btn--<?php echo htmlspecialchars($variant); ?>" href="<?php echo htmlspecialchars($actionHref); ?>"<?php if ($actionOnClick): ?> onclick="<?php echo htmlspecialchars($actionOnClick); ?>; return false;"<?php endif; ?>>
                                 <?php if ($actionIcon): ?>
                                     <i class="fas <?php echo htmlspecialchars($actionIcon); ?>"></i>
                                 <?php endif; ?>
