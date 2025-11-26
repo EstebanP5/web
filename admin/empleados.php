@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 admin_servicios_especializados_redirect();
             }
 
-            if ($empresa === '' || !in_array($empresa, ['ErgoSolar', 'Stone', 'Remedios'], true)) {
+            if ($empresa === '' || !in_array($empresa, ['CEDISA', 'Stone', 'Remedios'], true)) {
                 $_SESSION['flash_error'] = 'Selecciona una empresa válida.';
                 admin_servicios_especializados_redirect();
             }
@@ -813,7 +813,7 @@ include __DIR__ . '/includes/header.php';
                     <label for="editarEmpresa">Empresa *</label>
                     <select id="editarEmpresa" name="empresa" class="form-control" required>
                         <option value="">Selecciona una empresa</option>
-                        <option value="ErgoSolar">ErgoSolar</option>
+                        <option value="CEDISA">CEDISA</option>
                         <option value="Stone">Stone</option>
                         <option value="Remedios">Remedios</option>
                     </select>

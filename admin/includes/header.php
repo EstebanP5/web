@@ -52,6 +52,10 @@ function admin_is_active(string $slug, string $current): string {
                     <i class="fas fa-users"></i>
                     <span>Servicios Especializados</span>
                 </a>
+                <a class="admin-sidebar__link<?php echo admin_is_active('empresa', $activePage); ?>" href="usuarios_empresa.php">
+                    <i class="fas fa-building"></i>
+                    <span>Usuarios Empresa</span>
+                </a>
                 <a class="admin-sidebar__link<?php echo admin_is_active('attendance', $activePage); ?>" href="asistencias_mejorado.php">
                     <i class="fas fa-calendar-check"></i>
                     <span>Asistencia</span>
@@ -92,13 +96,23 @@ function admin_is_active(string $slug, string $current): string {
                                 $actionIcon = $action['icon'] ?? '';
                                 $actionLabel = $action['label'] ?? '';
                                 $variant = $action['variant'] ?? 'primary';
+                                $actionOnclick = $action['onclick'] ?? '';
                             ?>
-                            <a class="admin-btn admin-btn--<?php echo htmlspecialchars($variant); ?>" href="<?php echo htmlspecialchars($actionHref); ?>">
-                                <?php if ($actionIcon): ?>
-                                    <i class="fas <?php echo htmlspecialchars($actionIcon); ?>"></i>
-                                <?php endif; ?>
-                                <span><?php echo htmlspecialchars($actionLabel); ?></span>
-                            </a>
+                            <?php if ($actionOnclick): ?>
+                                <button type="button" class="admin-btn admin-btn--<?php echo htmlspecialchars($variant); ?>" onclick="<?php echo htmlspecialchars($actionOnclick); ?>">
+                                    <?php if ($actionIcon): ?>
+                                        <i class="fas <?php echo htmlspecialchars($actionIcon); ?>"></i>
+                                    <?php endif; ?>
+                                    <span><?php echo htmlspecialchars($actionLabel); ?></span>
+                                </button>
+                            <?php else: ?>
+                                <a class="admin-btn admin-btn--<?php echo htmlspecialchars($variant); ?>" href="<?php echo htmlspecialchars($actionHref); ?>">
+                                    <?php if ($actionIcon): ?>
+                                        <i class="fas <?php echo htmlspecialchars($actionIcon); ?>"></i>
+                                    <?php endif; ?>
+                                    <span><?php echo htmlspecialchars($actionLabel); ?></span>
+                                </a>
+                            <?php endif; ?>
                         <?php endforeach; ?>
                     </div>
                 <?php endif; ?>
