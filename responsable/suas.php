@@ -1,6 +1,9 @@
 <?php
 session_start();
 require_once '../includes/db.php';
+require_once '../vendor/autoload.php';
+
+use Smalot\PdfParser\Parser;
 
 // Verificar autenticación y rol responsable
 if (!isset($_SESSION['user_id']) || $_SESSION['user_rol'] !== 'responsable') {
@@ -12,6 +15,245 @@ $user_id = $_SESSION['user_id'];
 $user_name = $_SESSION['user_name'];
 $mensaje_exito = '';
 $mensaje_error = '';
+$mensaje_extraccion = '';
+$empleados_extraidos = [];
+
+// Función para limpiar nombre (eliminar sufijos sueltos R / A derivados de columnas)
+function suaCleanNombre($nombre){
+    $nombre = trim(preg_replace('/\s+/', ' ', $nombre));
+    if ($nombre === '') return $nombre;
+    $tokens = explode(' ', $nombre);
+    $i = 0;
+    while (count($tokens) > 2 && $i < 3) {
+        $last = end($tokens);
+        if (strlen($last) === 1 && in_array($last, ['R', 'A'])) {
+            array_pop($tokens);
+            $i++;
+        } else {
+            break;
+        }
+    }
+    return implode(' ', $tokens);
+}
+
+// Función para extraer empleados del texto del PDF
+function extraerEmpleadosDePDF($texto) {
+    $resultado = [];
+    $stopWords = ['REING', 'REING.', 'BAJA', 'ALTA'];
+    
+    // Normalizar texto
+    $t = preg_replace('/[\r\n\t]+/', ' ', $texto);
+    $t = preg_replace('/\s+/', ' ', $t);
+    $t = preg_replace('/\b(Reing|Reing\.|Baja|Alta)\b/iu', ' ', $t);
+    
+    $add = function($nss, $nombre, $curp) use (&$resultado, $stopWords) {
+        $nss = trim($nss);
+        $curp = trim($curp);
+        $nombre = trim(preg_replace('/\s+/', ' ', $nombre));
+        $nombre = strtoupper(preg_replace('/[^A-ZÁÉÍÓÚÑ\s]/u', '', $nombre));
+        $nombre = trim(preg_replace('/\b(REING|REING\.|BAJA|ALTA)\b/u', '', $nombre));
+        
+        if (strlen($curp) !== 18) return;
+        if (strlen($nombre) < 5 || strlen($nombre) > 90) return;
+        if (!preg_match('/^\d{2}-\d{2}-\d{2}-\d{4}-\d$/', $nss)) return;
+        
+        $resultado[$nss] = [
+            'nss' => $nss,
+            'nombre' => suaCleanNombre($nombre),
+            'curp' => $curp
+        ];
+    };
+    
+    // Patrón principal
+    $patPrincipal = '/([0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{4}-[0-9])\s+([A-ZÁÉÍÓÚÑ ]+?)\s+([A-Z]{4}[0-9]{6}[A-Z0-9]{6}[A-Z0-9][0-9])/iu';
+    if (preg_match_all($patPrincipal, $t, $m, PREG_SET_ORDER)) {
+        foreach ($m as $coinc) {
+            $add($coinc[1], $coinc[2], $coinc[3]);
+        }
+    }
+    
+    // Fallback: dividir por NSS y buscar CURP
+    if (empty($resultado)) {
+        $patNSS = '/\d{2}-\d{2}-\d{2}-\d{4}-\d/';
+        $patCURP = '/[A-Z]{4}\d{6}[A-Z0-9]{6}[A-Z0-9]\d/i';
+        preg_match_all($patNSS, $t, $nssLista);
+        $partes = preg_split($patNSS, $t, -1, PREG_SPLIT_DELIM_CAPTURE);
+        $nsss = $nssLista[0];
+        for ($i = 1; $i < count($partes); $i++) {
+            if (!isset($nsss[$i - 1])) continue;
+            $nss = $nsss[$i - 1];
+            $segmento = $partes[$i];
+            if (preg_match($patCURP, $segmento, $cMatch)) {
+                $curp = $cMatch[0];
+                $nombreParte = preg_replace('/' . preg_quote($curp, '/') . '/', '', $segmento, 1);
+                $add($nss, $nombreParte, $curp);
+            }
+        }
+    }
+    
+    // Pasada universal
+    $patNSSAll = '/\d{2}-\d{2}-\d{2}-\d{4}-\d/';
+    $patCURPAll = '/[A-Z]{4}\d{6}[A-Z0-9]{6}[A-Z0-9]\d/';
+    if (preg_match_all($patNSSAll, $t, $nsssAll, PREG_OFFSET_CAPTURE)) {
+        foreach ($nsssAll[0] as $data) {
+            $nss = $data[0];
+            if (isset($resultado[$nss])) continue;
+            $offset = $data[1];
+            $segmento = substr($t, $offset, 320);
+            if (preg_match($patCURPAll, $segmento, $curpMatch, PREG_OFFSET_CAPTURE)) {
+                $curp = $curpMatch[0][0];
+                $nombreBruto = substr($segmento, strlen($nss), $curpMatch[0][1] - strlen($nss));
+                $nombreBruto = preg_replace('/\b(REING|REING\.|BAJA|ALTA)\b/', ' ', $nombreBruto);
+                $nombreBruto = preg_replace('/[0-9.,]+/', ' ', $nombreBruto);
+                $nombreBruto = strtoupper(preg_replace('/[^A-ZÁÉÍÓÚÑ\s]/u', ' ', $nombreBruto));
+                $nombre = trim(preg_replace('/\s+/', ' ', $nombreBruto));
+                if ($nombre && strlen($curp) === 18) {
+                    $resultado[$nss] = ['nss' => $nss, 'nombre' => suaCleanNombre($nombre), 'curp' => $curp];
+                }
+            }
+        }
+    }
+    
+    return array_values($resultado);
+}
+
+// Procesar extracción de PDF SUA
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['extraer_pdf']) && isset($_FILES['pdf_sua'])) {
+    $archivo = $_FILES['pdf_sua'];
+    
+    if (($archivo['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        $mensaje_error = '❌ Debes seleccionar un archivo PDF.';
+    } elseif (($archivo['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+        $mensaje_error = '❌ Error al subir el archivo.';
+    } else {
+        $extension = strtolower(pathinfo($archivo['name'] ?? '', PATHINFO_EXTENSION));
+        if ($extension !== 'pdf') {
+            $mensaje_error = '❌ Solo se permiten archivos PDF.';
+        } else {
+            try {
+                $parser = new Parser();
+                $pdf = $parser->parseFile($archivo['tmp_name']);
+                $texto = $pdf->getText();
+                
+                $empleados_extraidos = extraerEmpleadosDePDF($texto);
+                
+                if (empty($empleados_extraidos)) {
+                    $mensaje_error = '❌ No se encontraron empleados en el PDF. Verifica que sea un archivo SUA válido.';
+                } else {
+                    $mensaje_extraccion = '✅ Se extrajeron ' . count($empleados_extraidos) . ' empleados del PDF.';
+                    $_SESSION['empleados_extraidos'] = $empleados_extraidos;
+                }
+            } catch (Exception $e) {
+                $mensaje_error = '❌ Error al procesar el PDF: ' . $e->getMessage();
+            }
+        }
+    }
+}
+
+// Recuperar empleados extraídos de la sesión si existen
+if (empty($empleados_extraidos) && isset($_SESSION['empleados_extraidos'])) {
+    $empleados_extraidos = $_SESSION['empleados_extraidos'];
+}
+
+// Procesar inserción de empleados extraídos
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['insertar_empleados'])) {
+    $empleados_seleccionados = $_POST['empleados_sel'] ?? [];
+    $insertados = 0;
+    $actualizados = 0;
+    $errores_insercion = [];
+    
+    if (!empty($empleados_seleccionados) && isset($_SESSION['empleados_extraidos'])) {
+        $empleados_data = $_SESSION['empleados_extraidos'];
+        
+        foreach ($empleados_seleccionados as $idx) {
+            if (!isset($empleados_data[$idx])) continue;
+            
+            $emp = $empleados_data[$idx];
+            $nss = $emp['nss'];
+            $nombre = $emp['nombre'];
+            $curp = $emp['curp'];
+            
+            // Verificar si ya existe por NSS
+            $stmt = $conn->prepare('SELECT id FROM empleados WHERE nss = ? LIMIT 1');
+            $stmt->bind_param('s', $nss);
+            $stmt->execute();
+            $existente = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            
+            if ($existente) {
+                // Actualizar CURP y empresa si no tiene
+                $stmt = $conn->prepare('UPDATE empleados SET curp = COALESCE(NULLIF(curp, ""), ?), empresa = COALESCE(NULLIF(empresa, ""), ?) WHERE id = ?');
+                $stmt->bind_param('ssi', $curp, $empresa_responsable, $existente['id']);
+                $stmt->execute();
+                $stmt->close();
+                $actualizados++;
+            } else {
+                // Primero crear usuario en la tabla users
+                // Generar email único basado en NSS
+                $nss_clean = str_replace('-', '', $nss);
+                $email = $nss_clean . '@trabajador.local';
+                $pwdPlain = substr(str_shuffle('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'), 0, 8);
+                $pwdHash = password_hash($pwdPlain, PASSWORD_DEFAULT);
+                
+                $userId = 0;
+                
+                // Intentar insertar usuario
+                $stmtUser = $conn->prepare("INSERT INTO users (name, email, password, password_visible, rol, activo) VALUES (?, ?, ?, ?, 'servicio_especializado', 1)");
+                if ($stmtUser) {
+                    $stmtUser->bind_param('ssss', $nombre, $email, $pwdHash, $pwdPlain);
+                    if ($stmtUser->execute()) {
+                        $userId = (int)$stmtUser->insert_id;
+                    }
+                    $stmtUser->close();
+                }
+                
+                // Si no se pudo crear, buscar si ya existe
+                if ($userId === 0) {
+                    $stmtFind = $conn->prepare("SELECT id FROM users WHERE email = ? LIMIT 1");
+                    if ($stmtFind) {
+                        $stmtFind->bind_param('s', $email);
+                        $stmtFind->execute();
+                        $rowUser = $stmtFind->get_result()->fetch_assoc();
+                        $userId = $rowUser ? (int)$rowUser['id'] : 0;
+                        $stmtFind->close();
+                    }
+                }
+                
+                // Insertar empleado con el ID del usuario Y la empresa del responsable
+                if ($userId > 0) {
+                    $stmt = $conn->prepare('INSERT INTO empleados (id, nombre, nss, curp, empresa, puesto, activo, fecha_registro) VALUES (?, ?, ?, ?, ?, "Servicio Especializado", 1, NOW()) ON DUPLICATE KEY UPDATE nombre=VALUES(nombre), nss=VALUES(nss), curp=VALUES(curp), empresa=VALUES(empresa), activo=1');
+                    $stmt->bind_param('issss', $userId, $nombre, $nss, $curp, $empresa_responsable);
+                    if ($stmt->execute()) {
+                        $insertados++;
+                    } else {
+                        $errores_insercion[] = $nombre;
+                    }
+                    $stmt->close();
+                } else {
+                    $errores_insercion[] = $nombre . ' (no se pudo crear usuario)';
+                }
+            }
+        }
+        
+        unset($_SESSION['empleados_extraidos']);
+        $empleados_extraidos = [];
+        
+        $msg_parts = [];
+        if ($insertados > 0) $msg_parts[] = "$insertados insertados";
+        if ($actualizados > 0) $msg_parts[] = "$actualizados actualizados";
+        if (!empty($errores_insercion)) $msg_parts[] = count($errores_insercion) . " con error";
+        
+        $mensaje_exito = '✅ Empleados procesados: ' . implode(', ', $msg_parts) . '.';
+    } else {
+        $mensaje_error = '❌ No hay empleados seleccionados para insertar.';
+    }
+}
+
+// Limpiar sesión de extracción
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['limpiar_extraccion'])) {
+    unset($_SESSION['empleados_extraidos']);
+    $empleados_extraidos = [];
+}
 
 // Asegurar tabla de empresas_responsables si no existe
 $conn->query("CREATE TABLE IF NOT EXISTS empresas_responsables (
@@ -438,9 +680,9 @@ $pageTitle = 'Gestión de SUAs  ';
     </style>
 </head>
 <body>
+    <?php include 'common/navigation.php'; ?>
+    
     <div class="container">
-        <a href="dashboard.php" class="nav-link"><i class="fas fa-arrow-left"></i> Volver al Dashboard</a>
-        
         <div class="header">
             <h1><i class="fas fa-file-invoice"></i> Gestión de SUAs</h1>
             <?php if ($empresa_responsable): ?>
@@ -461,6 +703,13 @@ $pageTitle = 'Gestión de SUAs  ';
             <div class="alert alert-error">
                 <i class="fas fa-exclamation-circle"></i>
                 <?php echo $mensaje_error; ?>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($mensaje_extraccion): ?>
+            <div class="alert alert-success">
+                <i class="fas fa-check-circle"></i>
+                <?php echo $mensaje_extraccion; ?>
             </div>
         <?php endif; ?>
 
@@ -489,55 +738,100 @@ $pageTitle = 'Gestión de SUAs  ';
             </div>
 
             <div class="cards-grid">
-                <div class="card">
-                    <h2><i class="fas fa-cloud-upload-alt"></i> Subir SUA</h2>
-                    <form method="POST" enctype="multipart/form-data">
-                        <input type="hidden" name="subir_sua" value="1">
-                        
-                        <div class="form-group">
-                            <label>Empleado *</label>
-                            <select name="empleado_id" class="form-control" required>
-                                <option value="">-- Selecciona un empleado --</option>
-                                <?php foreach ($empleados as $emp): ?>
-                                    <option value="<?php echo (int)$emp['id']; ?>">
-                                        <?php echo htmlspecialchars($emp['nombre']); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
+                <!-- Sección de Extracción Automática de PDF SUA -->
+                <div class="card" style="grid-column: 1 / -1;">
+                    <h2><i class="fas fa-magic"></i> Extracción Automática de Empleados desde PDF SUA</h2>
+                    <p style="color: #64748b; margin-bottom: 20px;">
+                        Sube un archivo PDF del SUA para extraer automáticamente los datos de los empleados (NSS, CURP, Nombre).
+                    </p>
+                    
+                    <form method="POST" enctype="multipart/form-data" style="margin-bottom: 20px;">
+                        <input type="hidden" name="extraer_pdf" value="1">
+                        <div style="display: flex; gap: 15px; align-items: end; flex-wrap: wrap;">
+                            <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 250px;">
+                                <label>Archivo PDF del SUA</label>
+                                <input type="file" name="pdf_sua" class="form-control" accept=".pdf" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-search"></i> Extraer Empleados
+                            </button>
                         </div>
-                        
-                        <div class="form-group">
-                            <label>Mes *</label>
-                            <select name="mes" class="form-control" required>
-                                <option value="">-- Selecciona mes --</option>
-                                <?php foreach ($meses as $num => $nombre): ?>
-                                    <option value="<?php echo $num; ?>"><?php echo $nombre; ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label>Año *</label>
-                            <select name="anio" class="form-control" required>
-                                <option value="">-- Selecciona año --</option>
-                                <?php for ($y = date('Y'); $y >= 2020; $y--): ?>
-                                    <option value="<?php echo $y; ?>"><?php echo $y; ?></option>
-                                <?php endfor; ?>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label>Archivo SUA *</label>
-                            <input type="file" name="sua_file" class="form-control" required accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls">
-                            <small style="color: #64748b; display: block; margin-top: 5px;">
-                                Formatos: PDF, imagen, Excel. Máximo 10MB
-                            </small>
-                        </div>
-                        
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-upload"></i> Subir SUA
-                        </button>
                     </form>
+
+                    <?php if (!empty($empleados_extraidos)): ?>
+                        <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 20px; margin-top: 20px;">
+                            <h3 style="color: #166534; margin-bottom: 15px;">
+                                <i class="fas fa-users"></i> Empleados Detectados (<?php echo count($empleados_extraidos); ?>)
+                            </h3>
+                            
+                            <form method="POST">
+                                <input type="hidden" name="insertar_empleados" value="1">
+                                
+                                <div class="table-container">
+                                    <table style="margin-bottom: 20px;">
+                                        <thead>
+                                            <tr>
+                                                <th style="width: 40px;">
+                                                    <input type="checkbox" id="selectAll" onchange="toggleAll(this)" checked>
+                                                </th>
+                                                <th>NSS</th>
+                                                <th>Nombre</th>
+                                                <th>CURP</th>
+                                                <th>Estado</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($empleados_extraidos as $idx => $emp): 
+                                                // Verificar si ya existe
+                                                $stmtCheck = $conn->prepare('SELECT id, nombre FROM empleados WHERE nss = ? LIMIT 1');
+                                                $stmtCheck->bind_param('s', $emp['nss']);
+                                                $stmtCheck->execute();
+                                                $existente = $stmtCheck->get_result()->fetch_assoc();
+                                                $stmtCheck->close();
+                                            ?>
+                                                <tr>
+                                                    <td>
+                                                        <input type="checkbox" name="empleados_sel[]" value="<?php echo $idx; ?>" class="emp-checkbox" checked>
+                                                    </td>
+                                                    <td><code><?php echo htmlspecialchars($emp['nss']); ?></code></td>
+                                                    <td><?php echo htmlspecialchars($emp['nombre']); ?></td>
+                                                    <td><code style="font-size: 12px;"><?php echo htmlspecialchars($emp['curp']); ?></code></td>
+                                                    <td>
+                                                        <?php if ($existente): ?>
+                                                            <span class="badge" style="background: #fef3c7; color: #92400e;">
+                                                                <i class="fas fa-exclamation-triangle"></i> Ya existe
+                                                            </span>
+                                                        <?php else: ?>
+                                                            <span class="badge" style="background: #d1fae5; color: #065f46;">
+                                                                <i class="fas fa-plus-circle"></i> Nuevo
+                                                            </span>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                
+                                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-save"></i> Insertar Empleados Seleccionados
+                                    </button>
+                                    <button type="submit" name="limpiar_extraccion" value="1" class="btn btn-secondary">
+                                        <i class="fas fa-times"></i> Cancelar / Limpiar
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                        
+                        <script>
+                            function toggleAll(source) {
+                                document.querySelectorAll('.emp-checkbox').forEach(checkbox => {
+                                    checkbox.checked = source.checked;
+                                });
+                            }
+                        </script>
+                    <?php endif; ?>
                 </div>
 
                 <div class="card">

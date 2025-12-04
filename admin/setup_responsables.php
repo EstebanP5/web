@@ -152,6 +152,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['asignar_empresa'])) {
     }
 }
 
+// Crear tabla empresas_responsables si no existe (para evitar errores en la consulta)
+$conn->query("CREATE TABLE IF NOT EXISTS empresas_responsables (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    empresa VARCHAR(100) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_user_empresa (user_id, empresa),
+    INDEX idx_user (user_id),
+    INDEX idx_empresa (empresa),
+    CONSTRAINT fk_empresa_responsable_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
 // Obtener responsables
 $responsables = [];
 $resultResponsables = $conn->query("SELECT u.id, u.name, u.email, er.empresa 

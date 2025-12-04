@@ -2,8 +2,23 @@
 session_start();
 require_once '../includes/db.php';
 
-// Verificar autenticación y rol (permitir responsable y Servicio Especializado)
-if (!isset($_SESSION['user_id']) || !in_array($_SESSION['user_rol'] ?? '', ['responsable','servicio_especializado'])) {
+// Verificar autenticación y rol (SOLO Servicio Especializado)
+// Si es responsable, redirigir al nuevo dashboard de responsables
+if (!isset($_SESSION['user_id'])) {
+    header('Location: ../login.php');
+    exit;
+}
+
+$user_rol = $_SESSION['user_rol'] ?? '';
+
+// Redirigir responsables a su nuevo dashboard
+if ($user_rol === 'responsable') {
+    header('Location: index.php');
+    exit;
+}
+
+// Solo permitir servicio_especializado
+if ($user_rol !== 'servicio_especializado') {
     header('Location: ../login.php');
     exit;
 }
