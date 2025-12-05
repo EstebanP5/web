@@ -29,13 +29,9 @@ if (!function_exists('resp_nav_path')) {
         </div>
         
         <div class="nav-menu">
-            <a href="<?= htmlspecialchars(resp_nav_path($respBaseUri, 'dashboard.php')) ?>" class="nav-item <?= $current_page === 'dashboard' ? 'active' : '' ?>">
+            <a href="<?= htmlspecialchars(resp_nav_path($respBaseUri, 'index.php')) ?>" class="nav-item <?= $current_page === 'index' || $current_page === 'dashboard' ? 'active' : '' ?>">
                 <i class="fas fa-tachometer-alt"></i>
                 <span>Dashboard</span>
-            </a>
-            <a href="<?= htmlspecialchars(resp_nav_path($respBaseUri, 'proyectos.php')) ?>" class="nav-item <?= $current_page === 'proyectos' ? 'active' : '' ?>">
-                <i class="fas fa-project-diagram"></i>
-                <span>Proyectos</span>
             </a>
             <a href="<?= htmlspecialchars(resp_nav_path($respBaseUri, 'trabajadores.php')) ?>" class="nav-item <?= $current_page === 'trabajadores' ? 'active' : '' ?>">
                 <i class="fas fa-users"></i>
@@ -44,10 +40,6 @@ if (!function_exists('resp_nav_path')) {
             <a href="<?= htmlspecialchars(resp_nav_path($respBaseUri, 'suas.php')) ?>" class="nav-item <?= $current_page === 'suas' ? 'active' : '' ?>">
                 <i class="fas fa-file-invoice"></i>
                 <span>SUAs</span>
-            </a>
-            <a href="<?= htmlspecialchars(resp_nav_path($respBaseUri, 'asistencias.php')) ?>" class="nav-item <?= $current_page === 'asistencias_responsable' || $current_page === 'asistencias' ? 'active' : '' ?>">
-                <i class="fas fa-calendar-check"></i>
-                <span>Asistencias</span>
             </a>
         </div>
         

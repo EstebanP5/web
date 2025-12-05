@@ -39,17 +39,21 @@ if ($empresa_responsable) {
     // Filtros
     $filtro_proyecto = isset($_GET['proyecto']) ? (int)$_GET['proyecto'] : 0;
     $filtro_busqueda = trim($_GET['busqueda'] ?? '');
+    $empresa_lower = strtolower($empresa_responsable);
 
-    // Construir query
-    $sql = 'SELECT DISTINCT e.id, e.nombre, e.nss, e.curp, e.puesto, e.telefono, e.activo, e.fecha_registro,
-            GROUP_CONCAT(DISTINCT g.nombre SEPARATOR ", ") as proyectos
+    // Construir query - busca por campo empresa directo O por relación con proyectos (case-insensitive)
+    $sql = 'SELECT DISTINCT e.id, e.nombre, e.nss, e.curp, e.puesto, e.telefono, e.activo, e.fecha_registro, e.empresa,
+            (SELECT GROUP_CONCAT(DISTINCT g2.nombre SEPARATOR ", ") 
+             FROM empleado_proyecto ep2 
+             JOIN grupos g2 ON ep2.proyecto_id = g2.id 
+             WHERE ep2.empleado_id = e.id AND ep2.activo = 1 AND g2.activo = 1) as proyectos
             FROM empleados e 
-            INNER JOIN empleado_proyecto ep ON e.id = ep.empleado_id 
-            INNER JOIN grupos g ON ep.proyecto_id = g.id 
-            WHERE g.empresa = ? AND e.activo = 1 AND ep.activo = 1';
+            LEFT JOIN empleado_proyecto ep ON e.id = ep.empleado_id AND ep.activo = 1
+            LEFT JOIN grupos g ON ep.proyecto_id = g.id AND g.activo = 1
+            WHERE e.activo = 1 AND (LOWER(e.empresa) = ? OR LOWER(g.empresa) = ?)';
     
-    $params = [$empresa_responsable];
-    $types = 's';
+    $params = [$empresa_lower, $empresa_lower];
+    $types = 'ss';
 
     if ($filtro_proyecto > 0) {
         $sql .= ' AND g.id = ?';

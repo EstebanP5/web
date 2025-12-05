@@ -32,76 +32,45 @@ $empresa_responsable = $responsableData['empresa'] ?? '';
 
 $stats = [
     'trabajadores' => 0,
-    'proyectos' => 0,
-    'suas' => 0,
-    'asistencias_hoy' => 0
+    'suas' => 0
 ];
 
-$proyectos = [];
 $trabajadores_recientes = [];
 $suas_recientes = [];
 
 if ($empresa_responsable) {
-    // Contar trabajadores de la empresa
+    $empresa_lower = strtolower($empresa_responsable);
+    
+    // Contar trabajadores de la empresa (case-insensitive)
     $stmt = $conn->prepare('SELECT COUNT(DISTINCT e.id) as total 
         FROM empleados e 
-        INNER JOIN empleado_proyecto ep ON e.id = ep.empleado_id 
-        INNER JOIN grupos g ON ep.proyecto_id = g.id 
-        WHERE g.empresa = ? AND e.activo = 1 AND ep.activo = 1');
-    $stmt->bind_param('s', $empresa_responsable);
+        LEFT JOIN empleado_proyecto ep ON e.id = ep.empleado_id AND ep.activo = 1
+        LEFT JOIN grupos g ON ep.proyecto_id = g.id AND g.activo = 1
+        WHERE e.activo = 1 AND (LOWER(e.empresa) = ? OR LOWER(g.empresa) = ?)');
+    $stmt->bind_param('ss', $empresa_lower, $empresa_lower);
     $stmt->execute();
     $stats['trabajadores'] = (int)($stmt->get_result()->fetch_assoc()['total'] ?? 0);
     $stmt->close();
 
-    // Contar proyectos de la empresa
-    $stmt = $conn->prepare('SELECT COUNT(*) as total FROM grupos WHERE empresa = ? AND activo = 1');
-    $stmt->bind_param('s', $empresa_responsable);
-    $stmt->execute();
-    $stats['proyectos'] = (int)($stmt->get_result()->fetch_assoc()['total'] ?? 0);
-    $stmt->close();
-
-    // Contar SUAs
-    $stmt = $conn->prepare('SELECT COUNT(*) as total FROM suas WHERE empresa = ?');
-    $stmt->bind_param('s', $empresa_responsable);
+    // Contar SUAs (lotes subidos por este usuario)
+    $stmt = $conn->prepare('SELECT COUNT(*) as total FROM sua_lotes WHERE uploaded_by = ?');
+    $stmt->bind_param('i', $user_id);
     $stmt->execute();
     $stats['suas'] = (int)($stmt->get_result()->fetch_assoc()['total'] ?? 0);
     $stmt->close();
 
-    // Contar asistencias de hoy
-    $stmt = $conn->prepare('SELECT COUNT(DISTINCT a.id) as total 
-        FROM asistencia a 
-        INNER JOIN grupos g ON a.proyecto_id = g.id 
-        WHERE g.empresa = ? AND a.fecha = CURDATE()');
-    $stmt->bind_param('s', $empresa_responsable);
-    $stmt->execute();
-    $stats['asistencias_hoy'] = (int)($stmt->get_result()->fetch_assoc()['total'] ?? 0);
-    $stmt->close();
-
-    // Obtener proyectos de la empresa
-    $stmt = $conn->prepare('SELECT g.*, 
-        (SELECT COUNT(DISTINCT ep.empleado_id) FROM empleado_proyecto ep 
-         JOIN empleados e ON ep.empleado_id = e.id AND e.activo = 1 
-         WHERE ep.proyecto_id = g.id AND ep.activo = 1) as num_trabajadores
-        FROM grupos g 
-        WHERE g.empresa = ? AND g.activo = 1 
-        ORDER BY g.nombre');
-    $stmt->bind_param('s', $empresa_responsable);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    while ($row = $result->fetch_assoc()) {
-        $proyectos[] = $row;
-    }
-    $stmt->close();
-
-    // Obtener trabajadores recientes
-    $stmt = $conn->prepare('SELECT DISTINCT e.id, e.nombre, e.nss, e.curp, e.puesto, e.fecha_registro, g.nombre as proyecto
+    // Obtener trabajadores recientes (case-insensitive)
+    $stmt = $conn->prepare('SELECT DISTINCT e.id, e.nombre, e.nss, e.curp, e.puesto, e.fecha_registro, e.empresa,
+        (SELECT g2.nombre FROM empleado_proyecto ep2 
+         JOIN grupos g2 ON ep2.proyecto_id = g2.id 
+         WHERE ep2.empleado_id = e.id AND ep2.activo = 1 LIMIT 1) as proyecto
         FROM empleados e 
-        INNER JOIN empleado_proyecto ep ON e.id = ep.empleado_id 
-        INNER JOIN grupos g ON ep.proyecto_id = g.id 
-        WHERE g.empresa = ? AND e.activo = 1 AND ep.activo = 1
+        LEFT JOIN empleado_proyecto ep ON e.id = ep.empleado_id AND ep.activo = 1
+        LEFT JOIN grupos g ON ep.proyecto_id = g.id AND g.activo = 1
+        WHERE e.activo = 1 AND (LOWER(e.empresa) = ? OR LOWER(g.empresa) = ?)
         ORDER BY e.fecha_registro DESC 
-        LIMIT 5');
-    $stmt->bind_param('s', $empresa_responsable);
+        LIMIT 10');
+    $stmt->bind_param('ss', $empresa_lower, $empresa_lower);
     $stmt->execute();
     $result = $stmt->get_result();
     while ($row = $result->fetch_assoc()) {
@@ -109,14 +78,9 @@ if ($empresa_responsable) {
     }
     $stmt->close();
 
-    // Obtener SUAs recientes
-    $stmt = $conn->prepare('SELECT s.*, e.nombre as empleado_nombre 
-        FROM suas s 
-        INNER JOIN empleados e ON s.empleado_id = e.id 
-        WHERE s.empresa = ? 
-        ORDER BY s.created_at DESC 
-        LIMIT 5');
-    $stmt->bind_param('s', $empresa_responsable);
+    // Obtener SUAs recientes (lotes subidos por este usuario)
+    $stmt = $conn->prepare('SELECT * FROM sua_lotes WHERE uploaded_by = ? ORDER BY created_at DESC LIMIT 5');
+    $stmt->bind_param('i', $user_id);
     $stmt->execute();
     $result = $stmt->get_result();
     while ($row = $result->fetch_assoc()) {
@@ -406,15 +370,6 @@ $pageTitle = 'Dashboard - Responsable';
                     </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon blue">
-                        <i class="fas fa-project-diagram"></i>
-                    </div>
-                    <div class="stat-info">
-                        <h3><?= $stats['proyectos'] ?></h3>
-                        <p>Proyectos</p>
-                    </div>
-                </div>
-                <div class="stat-card">
                     <div class="stat-icon purple">
                         <i class="fas fa-file-invoice"></i>
                     </div>
@@ -423,80 +378,22 @@ $pageTitle = 'Dashboard - Responsable';
                         <p>SUAs Registrados</p>
                     </div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon orange">
-                        <i class="fas fa-calendar-check"></i>
-                    </div>
-                    <div class="stat-info">
-                        <h3><?= $stats['asistencias_hoy'] ?></h3>
-                        <p>Asistencias Hoy</p>
-                    </div>
-                </div>
             </div>
 
             <!-- Quick Actions -->
             <div class="quick-actions">
                 <a href="trabajadores.php" class="quick-action">
-                    <i class="fas fa-user-plus"></i>
+                    <i class="fas fa-users"></i>
                     <span>Ver Trabajadores</span>
-                </a>
-                <a href="proyectos.php" class="quick-action">
-                    <i class="fas fa-clipboard-list"></i>
-                    <span>Ver Proyectos</span>
                 </a>
                 <a href="suas.php" class="quick-action">
                     <i class="fas fa-upload"></i>
                     <span>Gestionar SUAs</span>
                 </a>
-                <a href="asistencias.php" class="quick-action">
-                    <i class="fas fa-clock"></i>
-                    <span>Ver Asistencias</span>
-                </a>
             </div>
 
             <!-- Cards Grid -->
             <div class="cards-grid">
-                <!-- Proyectos -->
-                <div class="card">
-                    <div class="card-header">
-                        <h2><i class="fas fa-project-diagram"></i> Proyectos</h2>
-                        <a href="proyectos.php" class="btn btn-primary btn-sm">Ver todos</a>
-                    </div>
-                    <div class="card-body">
-                        <?php if (empty($proyectos)): ?>
-                            <div class="empty-state">
-                                <i class="fas fa-folder-open"></i>
-                                <p>No hay proyectos registrados</p>
-                            </div>
-                        <?php else: ?>
-                            <div class="table-container">
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th>Proyecto</th>
-                                            <th>Trabajadores</th>
-                                            <th>Localidad</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php foreach (array_slice($proyectos, 0, 5) as $p): ?>
-                                        <tr>
-                                            <td><strong><?= htmlspecialchars($p['nombre']) ?></strong></td>
-                                            <td>
-                                                <span class="badge badge-success">
-                                                    <?= (int)$p['num_trabajadores'] ?> <i class="fas fa-user"></i>
-                                                </span>
-                                            </td>
-                                            <td><?= htmlspecialchars($p['localidad'] ?? '-') ?></td>
-                                        </tr>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-                </div>
-
                 <!-- Trabajadores Recientes -->
                 <div class="card">
                     <div class="card-header">
@@ -537,23 +434,23 @@ $pageTitle = 'Dashboard - Responsable';
                 <!-- SUAs Recientes -->
                 <div class="card" style="grid-column: 1 / -1;">
                     <div class="card-header">
-                        <h2><i class="fas fa-file-invoice"></i> SUAs Recientes</h2>
+                        <h2><i class="fas fa-file-invoice"></i> PDFs SUA Recientes</h2>
                         <a href="suas.php" class="btn btn-primary btn-sm">Gestionar SUAs</a>
                     </div>
                     <div class="card-body">
                         <?php if (empty($suas_recientes)): ?>
                             <div class="empty-state">
                                 <i class="fas fa-file-invoice"></i>
-                                <p>No hay SUAs registrados</p>
+                                <p>No hay PDFs SUA procesados</p>
                             </div>
                         <?php else: ?>
                             <div class="table-container">
                                 <table>
                                     <thead>
                                         <tr>
-                                            <th>Empleado</th>
-                                            <th>Período</th>
+                                            <th>Fecha Proceso</th>
                                             <th>Archivo</th>
+                                            <th>Total Empleados</th>
                                             <th>Fecha Carga</th>
                                             <th>Acciones</th>
                                         </tr>
@@ -561,17 +458,25 @@ $pageTitle = 'Dashboard - Responsable';
                                     <tbody>
                                         <?php foreach ($suas_recientes as $s): ?>
                                         <tr>
-                                            <td><strong><?= htmlspecialchars($s['empleado_nombre']) ?></strong></td>
                                             <td>
                                                 <span class="badge badge-info">
-                                                    <?= $meses[(int)$s['mes']] ?> <?= $s['anio'] ?>
+                                                    <?= date('Y-m-d', strtotime($s['fecha_proceso'])) ?>
                                                 </span>
                                             </td>
-                                            <td><?= htmlspecialchars($s['nombre_original'] ?? 'Archivo') ?></td>
-                                            <td><?= date('d/m/Y', strtotime($s['created_at'])) ?></td>
                                             <td>
-                                                <a href="../<?= htmlspecialchars($s['ruta_archivo']) ?>" target="_blank" class="btn btn-sm btn-primary">
-                                                    <i class="fas fa-download"></i>
+                                                <?php if (file_exists('../uploads/' . $s['archivo'])): ?>
+                                                    <a href="../uploads/<?= htmlspecialchars($s['archivo']) ?>" target="_blank" style="color: #059669;">
+                                                        <i class="fas fa-file-pdf"></i> Ver PDF
+                                                    </a>
+                                                <?php else: ?>
+                                                    <?= htmlspecialchars($s['archivo']) ?>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td><strong><?= $s['total'] ?></strong></td>
+                                            <td><?= date('d/m/Y H:i', strtotime($s['created_at'])) ?></td>
+                                            <td>
+                                                <a href="descargar_credenciales_lote.php?lote_id=<?= $s['id'] ?>" target="_blank" class="btn btn-sm btn-primary">
+                                                    <i class="fas fa-download"></i> CSV
                                                 </a>
                                             </td>
                                         </tr>
